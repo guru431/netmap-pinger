@@ -163,7 +163,7 @@ function drawGraph() {
     group.addEventListener('keydown',event=>{if(event.target===group&&(event.key==='Enter'||event.key===' ')){event.preventDefault();selectNode(node.id,editLayout&&(groupSelect||event.ctrlKey||event.metaKey||event.shiftKey));}});
     $('node-layer').append(group); nodeElements.set(node.id,{group,box,icon,dot,title,endpoints});
   }
-  $('map-name').textContent = graph.name; document.title = tr("{0} · Карта сети", graph.name);
+  $('map-name').textContent = graph.name;
   $('map-empty').hidden = graph.nodes.length > 0; renderedRevision = graph.revision;
   if (first || autoFit) fit();
   if (selected && !graph.nodes.some(n=>n.id===selected)) selected = null;

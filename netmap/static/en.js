@@ -169,7 +169,6 @@ const netmapEnglish = {
   "Карта сохранена": "Map saved",
   " · недоступность допускается": " · may be offline",
   "Изменить связь": "Edit link",
-  "{0} · Карта сети": "{0} · Network map",
   "Без адресов": "No addresses",
   " · ещё {0}": " · {0} more",
   "{0} из {1} узлов": "{0} of {1} nodes",

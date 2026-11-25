@@ -107,7 +107,7 @@ def create_app(db_path=DEFAULT_DB, *, monitoring=True, probe=None, body_limit=MA
             finally:
                 store.close()
 
-    app = FastAPI(title="Карта сети", lifespan=lifespan, docs_url=None, redoc_url=None,
+    app = FastAPI(title="Netmap Pinger", lifespan=lifespan, docs_url=None, redoc_url=None,
                   openapi_url=None)
     hosts = os.environ.get("NETMAP_HOSTS", "127.0.0.1,localhost").split(",")
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=[h.strip() for h in hosts])
