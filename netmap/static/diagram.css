@@ -26,6 +26,55 @@
     linear-gradient(90deg,light-dark(#e5ecf2,#273640) 1px,transparent 1px);
   background-size: 24px 24px;
 }
+.diagram-tools:not([hidden]) {
+  display: flex;
+  flex: none;
+  gap: 5px;
+  padding: 4px 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.diagram-tools button, .diagram-tools select {
+  min-height: 24px;
+  padding: 2px 8px;
+  font-size: calc(10px * var(--font-scale, 1));
+}
+.diagram-tools select { width: min(180px, 42%); }
+.diagram .layout-help { top: 36px; }
+.diagram-site-area {
+  fill: light-dark(#f4faff,#20313c);
+  stroke: light-dark(#b8cbd8,#405b6f);
+  stroke-width: 1.35;
+  pointer-events: none;
+}
+.diagram-site-title { cursor: pointer; }
+.diagram-site-title:hover rect, .diagram-site-title:focus-visible rect {
+  fill: light-dark(#dcecf8,#2c485d);
+}
+.diagram-site-label, .diagram-name {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 100%;
+  font-weight: 650;
+  color: var(--ink);
+}
+.diagram-site-label {
+  justify-content: space-between;
+  font-size: calc(13px * var(--font-scale, 1));
+  border-bottom: 1px solid var(--border);
+}
+.diagram-site-count {
+  flex: none;
+  font-size: .88em;
+  color: var(--muted);
+}
+.diagram-state-ring {
+  fill: var(--map-surface);
+  stroke-width: 1.8;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
 .diagram-selection {
   fill: none;
   stroke: transparent;
@@ -42,6 +91,7 @@
 .diagram .allows-offline .diagram-selection {
   stroke-dasharray: 4 3;
 }
+.diagram .allows-offline .diagram-state-ring { stroke-dasharray: 2 2; }
 .diagram .diagram-device-icon {
   stroke: none;
 }
@@ -50,13 +100,18 @@
   color: var(--diagram-ink);
 }
 .diagram-status {
-  stroke: var(--map-surface);
-  stroke-width: 2;
+  stroke: var(--surface);
+  stroke-width: 1.5;
 }
-.diagram-text, .diagram-status, .diagram-address-status {
+.diagram-status-mark {
+  fill: light-dark(#092124,#101e2a);
+  font-size: 12px;
+  font-weight: 800;
+}
+.diagram-text, .diagram-status, .diagram-status-mark, .diagram-address-status {
   pointer-events: none;
 }
-.diagram-name, .diagram-target {
+.diagram-ellipsis, .diagram-target {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -66,11 +121,14 @@
     0 1px var(--map-surface), 0 -1px var(--map-surface);
 }
 .diagram-name {
-  color: var(--ink);
+  justify-content: center;
   font-size: calc(12px * var(--font-scale, 1));
-  font-weight: 650;
-  text-align: center;
   line-height: calc(16px * var(--font-scale, 1));
+}
+.diagram-more {
+  flex: none;
+  font-size: .82em;
+  color: var(--link);
 }
 .diagram-address-hit {
   fill: transparent;
@@ -99,6 +157,9 @@
   opacity: .85;
   stroke-width: 1.4;
 }
+.diagram-link-hidden { display: none; }
+.diagram-link-muted { opacity: .35; }
+.diagram-link-muted .edge-label { display: none; }
 .diagram .edge-open .edge-path {
   stroke-dasharray: 4 3;
 }

@@ -34,7 +34,8 @@ async function check(browserType, mobile=false) {
     let stored=fixture(),writes=0,rejectSave=false,diagnosticCalls=0,statisticsQuery;
     await page.route('http://netmap.test/**',async route=>{
       const url=new URL(route.request().url()),name=url.pathname;
-      if(name==='/api/state')return route.fulfill({json:{graph:stored,nodes:{a:{status:'up',addresses:[{target:'192.0.2.1',status:'up',checked_at:100,rtt_ms:1}]}},server_time:100,stale_after:45,
+      if(name==='/api/state')return route.fulfill({json:{graph:stored,nodes:{b:{status:'down'},c:{status:'partial'},d:{status:'stale'},
+        a:{status:'up',addresses:[{target:'192.0.2.1',status:'up',checked_at:100,rtt_ms:1}]}},server_time:100,stale_after:45,
         monitor:{last_completed:100,running:true,duration:0,completed:0,targets:0}}});
       if(name==='/api/map'){
         if(rejectSave){rejectSave=false;return route.fulfill({status:409,json:{detail:'Test conflict'}});}
@@ -119,13 +120,41 @@ async function check(browserType, mobile=false) {
       ['#diagram-server','#diagram-router','#diagram-switch','#diagram-firewall']);
     assert.equal(await page.locator('.diagram .node-box').count(),0);
     assert.equal(await page.locator('.diagram .diagram-symbol-hit').count(),stored.nodes.length);
-    assert.deepEqual(await page.locator('.diagram-target').allTextContents(),stored.nodes[0].addresses);
-    assert.deepEqual(await page.locator('.diagram-channel').allTextContents(),['LAN','WAN']);
+    assert.deepEqual(await page.locator('.diagram-status-mark').allTextContents(),['✓','×','!','?']);
+    assert.deepEqual(await page.locator('.diagram-state-ring').evaluateAll(rings=>rings.map(ring=>ring.getAttribute('stroke'))),
+      ['var(--up)','var(--down)','var(--partial)','var(--stale)']);
+    assert.equal(await page.locator('#site-layer .diagram-site').count(),2);
+    assert.equal(await page.locator('.diagram-site-title[aria-label="Приблизить площадку Site B"]').count(),1);
+    const fitWidth=await page.evaluate(()=>view.w);
+    await page.locator('.diagram-site-title[aria-label="Приблизить площадку Site B"]').click();
+    assert.ok(await page.evaluate(previous=>view.w<previous,fitWidth));
+    assert.equal(await page.locator('#diagram-site').inputValue(),'site:Site B');
+    await page.locator('#add-node').click();
+    assert.equal(await page.locator('#node-site').inputValue(),'Site B');
+    await page.locator('#node-dialog').getByRole('button',{name:'Отмена',exact:true}).click();
+    await page.locator('#diagram-site').selectOption('');
+    assert.equal(await page.evaluate(()=>view.w),fitWidth);
+    assert.equal(await page.locator('#edge-layer > g:not(.diagram-link-hidden)').count(),0);
+    assert.deepEqual(await page.locator('.diagram-target').allTextContents(),['192.0.2.1']);
+    assert.deepEqual(await page.locator('.diagram-channel').allTextContents(),['LAN']);
+    assert.equal(await page.locator('.diagram-more').textContent(),'+1');
+    await page.locator('.map-node[data-id="a"] .diagram-symbol-hit').click();
+    assert.equal(await page.locator('#edge-layer > g:not(.diagram-link-hidden)').count(),2);
+    assert.equal(await page.locator('#address-results .address-row').count(),2);
+    await page.locator('#address-results button[aria-label="История router.example"]').click();
+    assert.equal(await page.locator('#history-target').inputValue(),'router.example');
+    await page.locator('#history-dialog [data-close]').first().click();
+    await page.locator('#close-details').click();
+    await page.locator('#diagram-links').click();
+    assert.equal(await page.locator('#edge-layer > g:not(.diagram-link-hidden)').count(),5);
+    await page.locator('#diagram-group').click();
+    assert.equal(await page.locator('#site-layer .diagram-site').count(),0);
+    assert.equal(await page.locator('#edge-layer > g:not(.diagram-link-hidden)').count(),6);
     assert.equal(await page.locator('.edge-open .edge-end').count(),4);
     assert.equal(await page.locator('#edge-layer .edge-path').first().getAttribute('d'),'M100 100 L180 50 L260 100');
     assert.equal(await page.locator('#edge-layer .edge-path').last().getAttribute('d'),'M100 100 L100 400');
-    await page.locator('.diagram-address[data-target="router.example"] .diagram-address-hit').click();
-    assert.equal(await page.locator('#history-target').inputValue(),'router.example');
+    await page.locator('.diagram-address[data-target="192.0.2.1"] .diagram-address-hit').click();
+    assert.equal(await page.locator('#history-target').inputValue(),'192.0.2.1');
     await page.locator('#history-dialog [data-close]').first().click();
     await page.reload();await page.locator('.diagram-address').first().waitFor();
     assert.equal(await page.locator('#view-diagram').getAttribute('aria-pressed'),'true');
@@ -478,6 +507,7 @@ async function check(browserType, mobile=false) {
     stored = dense;
     await page.reload();
     await page.locator('.diagram .map-node').first().waitFor();
+    await page.locator('#diagram-group').click();
     const bounds = await page.locator('.diagram .map-node').evaluateAll(nodes=>nodes.map(node=>{
       const box=node.getBBox(), {e:x,f:y}=node.transform.baseVal.getItem(0).matrix;
       return [x+box.x,y+box.y,x+box.x+box.width,y+box.y+box.height];

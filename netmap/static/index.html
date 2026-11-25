@@ -102,7 +102,12 @@
       <footer class="sidebar-footer"><a href="api/export" download data-i18n>Скачать карту</a><button id="import-button" class="text-button" data-i18n>Загрузить копию</button><input id="import-file" type="file" accept="application/json,.json" hidden></footer>
     </aside>
     <section class="map-panel" aria-label="Карта сети" data-i18n-attrs="aria-label">
-      <svg id="map" xmlns="http://www.w3.org/2000/svg" aria-label="Узлы и связи сети" role="group" data-i18n-attrs="aria-label"><g id="edge-layer"></g><g id="node-layer"></g></svg>
+      <div id="diagram-tools" class="diagram-tools" hidden>
+        <button id="diagram-group" aria-pressed="true" title="Сгруппировать узлы по полю «Площадка»" data-i18n-attrs="title" data-i18n>По площадкам</button>
+        <button id="diagram-links" aria-pressed="false" title="В обзоре видны связи внутри площадок и связи выбранного узла" data-i18n-attrs="title" data-i18n>Все связи</button>
+        <select id="diagram-site" aria-label="Площадка" data-i18n-attrs="aria-label" hidden></select>
+      </div>
+      <svg id="map" xmlns="http://www.w3.org/2000/svg" aria-label="Узлы и связи сети" role="group" data-i18n-attrs="aria-label"><g id="site-layer"></g><g id="edge-layer"></g><g id="node-layer"></g></svg>
       <p id="layout-help" class="layout-help" role="status" hidden></p>
       <div class="map-empty" id="map-empty" hidden data-i18n>Добавьте узел или загрузите сохранённую карту.</div>
       <p id="incident-context" class="incident-context" role="status" hidden></p>

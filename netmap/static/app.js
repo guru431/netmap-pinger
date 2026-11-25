@@ -27,7 +27,8 @@ const touchPointers = new Map();
 let pinch = null, blockMapClick = false;
 const svg = $('map');
 let diagramView = false;
-let diagramLayout = new Map();
+let diagramLayout = new Map(), diagramSites = [];
+let groupDiagram = true, showAllDiagramLinks = false;
 const mapViewKey = 'netmap-map-view';
 
 function elem(tag, attrs = {}, text = null) {
@@ -99,7 +100,8 @@ function fit() {
   if (!graph || (!graph.nodes.length && !(diagramView && graph.edges.length))) return;
   autoFit = true;
   if (diagramView) {
-    view = diagramViewport(graph.nodes, graph.edges);
+    $('diagram-site').value='';
+    view = diagramSites.length ? diagramViewport([],[],{sites:diagramSites}) : diagramViewport(graph.nodes,graph.edges);
     viewChanged();
     return;
   }
@@ -116,26 +118,34 @@ function mapNodeTransform(node, dx=0, dy=0) {
   const {x,y}=mapNodePosition(node);
   return `translate(${x+dx} ${y+dy})`;
 }
-function diagramViewport(nodes, edges = [], {padding=24,minWidth=200,minHeight=150} = {}) {
+function diagramViewport(nodes, edges = [], {padding=24,minWidth=200,minHeight=150,sites=[]} = {}) {
   let left=Infinity,top=Infinity,right=-Infinity,bottom=-Infinity;
   const include=([x1,y1,x2=x1,y2=y1])=>{
     left=Math.min(left,x1);top=Math.min(top,y1);right=Math.max(right,x2);bottom=Math.max(bottom,y2);
   };
   for (const node of nodes) include(diagramLayout.get(node.id).bounds);
   for (const edge of edges) for (const point of edgeElements.get(edge.id).points) include(point);
+  for (const site of sites) include(site.bounds);
   const w=Math.max(minWidth,right-left+padding*2),h=Math.max(minHeight,bottom-top+padding*2);
   return {x:(left+right-w)/2,y:(top+bottom-h)/2,w,h};
+}
+function groupedDiagram() { return diagramView&&groupDiagram&&!editLayout; }
+function focusDiagramSite(site) {
+  $('diagram-site').value=`site:${site.name}`;
+  autoFit=false; view=diagramViewport([],[],{sites:[site]}); viewChanged();
 }
 function renderMapView(useDiagram) {
   diagramView = useDiagram;
   $('view-classic').setAttribute('aria-pressed',String(!useDiagram));
   $('view-diagram').setAttribute('aria-pressed',String(useDiagram));
+  $('diagram-tools').hidden=!useDiagram;
   svg.parentElement.classList.toggle('diagram',useDiagram);
 }
 function switchMapView(useDiagram) {
   if (diagramView === useDiagram) return;
   cancelMapGesture();
   renderMapView(useDiagram);
+  autoFit=true;
   try { localStorage.setItem(mapViewKey,useDiagram?'diagram':'classic'); } catch { /* Optional preference. */ }
   redrawMapView();
 }
@@ -171,7 +181,7 @@ function edgePoints(edge, overrides = new Map(), from = graph.nodes.find(n=>n.id
 }
 function updateEdgeGeometry(edge, refs, overrides = new Map()) {
   const logical = edgePoints(edge,overrides,refs.from,refs.to);
-  const pts = diagramView ? diagramEdgePoints(logical,refs.from,refs.to,diagramLayout) : logical;
+  const pts = diagramView ? diagramEdgePoints(logical,refs.from,refs.to,diagramLayout,groupedDiagram()) : logical;
   const path = pts.map((p,i) => `${i?'L':'M'}${p[0]} ${p[1]}`).join(' ');
   refs.points = pts;
   refs.path.setAttribute('d',path); refs.hit.setAttribute('d',path);
@@ -202,9 +212,21 @@ function drawClassicAddress(node, index) {
 function drawGraph() {
   if (!graph) return;
   const first = renderedRevision < 0;
-  $('node-layer').replaceChildren(); $('edge-layer').replaceChildren();
+  $('node-layer').replaceChildren(); $('edge-layer').replaceChildren(); $('site-layer').replaceChildren();
   nodeElements.clear(); edgeElements.clear();
-  diagramLayout = diagramView ? layoutDiagram(graph.nodes,svg) : new Map();
+  const grouped=groupedDiagram();
+  const layout=diagramView ? layoutDiagram(graph.nodes,svg,grouped) : {positions:new Map(),sites:[]};
+  diagramLayout=layout.positions; diagramSites=layout.sites;
+  $('diagram-group').setAttribute('aria-pressed',String(grouped));
+  const sitePicker=$('diagram-site'), previousSite=sitePicker.value;
+  sitePicker.hidden=!grouped;
+  const siteNames=diagramSites.map(({name})=>name).sort((a,b)=>a.localeCompare(b,uiLocale,{numeric:true}));
+  sitePicker.replaceChildren(new Option(tr("Все площадки"),''),...siteNames.map(name=>new Option(name||tr("Без площадки"),`site:${name}`)));
+  sitePicker.value=previousSite;
+  if(sitePicker.selectedIndex<0)sitePicker.selectedIndex=0;
+  for(const site of diagramSites){
+    $('site-layer').append(drawDiagramSite(site,()=>focusDiagramSite(site)));
+  }
   const nodes = new Map(graph.nodes.map(node=>[node.id,node]));
   for (const edge of graph.edges) {
     const from = nodes.get(edge.from_id) ?? null, to = nodes.get(edge.to_id) ?? null;
@@ -225,15 +247,16 @@ function drawGraph() {
       }
     }
     group.append(hit,label); $('edge-layer').append(group);
-    const refs = {from,to,path,hit,label,markers}; edgeElements.set(edge.id,refs); updateEdgeGeometry(edge,refs);
+    const refs = {from,to,group,path,hit,label,markers}; edgeElements.set(edge.id,refs); updateEdgeGeometry(edge,refs);
   }
   for (const node of graph.nodes) {
     const group = elem('g',{class:'map-node',transform:mapNodeTransform(node),tabindex:'0',role:'button','data-id':node.id});
     if(editLayout)group.setAttribute('aria-keyshortcuts',Object.keys(nodeMoveDirections).join(' '));
     const position = diagramLayout.get(node.id);
-    const {content,icon,dot,title} = diagramView ? drawDiagramNode(group,node,position) : drawClassicNode(group,node);
+    const {content,icon,dot,title,stateRing,mark} = diagramView ? drawDiagramNode(group,node,position) : drawClassicNode(group,node);
     const endpoints = new Map();
-    node.addresses.forEach((target,index)=>{
+    const addresses=diagramView?node.addresses.slice(0,1):node.addresses;
+    addresses.forEach((target,index)=>{
       const {point,circle} = diagramView ? drawDiagramAddress(position,target,index) : drawClassicAddress(node,index);
       point.setAttribute('tabindex','0'); point.setAttribute('role','button'); point.setAttribute('data-target',target);
       const pointTitle=elem('title',{},target);point.append(pointTitle);
@@ -244,7 +267,7 @@ function drawGraph() {
     });
     group.addEventListener('click',event=>selectNode(node.id,editLayout&&(groupSelect||event.ctrlKey||event.metaKey||event.shiftKey)));
     group.addEventListener('keydown',event=>{if(event.target===group&&(event.key==='Enter'||event.key===' ')){event.preventDefault();selectNode(node.id,editLayout&&(groupSelect||event.ctrlKey||event.metaKey||event.shiftKey));}});
-    $('node-layer').append(group); nodeElements.set(node.id,{group,icon,dot,title,endpoints});
+    $('node-layer').append(group); nodeElements.set(node.id,{group,icon,dot,title,endpoints,stateRing,mark});
   }
   $('map-name').textContent = graph.name;
   $('map-empty').hidden = graph.nodes.length > 0 || (diagramView && graph.edges.length > 0); renderedRevision = graph.revision;
@@ -334,7 +357,10 @@ function updateState() {
   for (const node of graph.nodes) {
     const refs = nodeElements.get(node.id); if (!refs) continue;
     const status = statusFor(node.id); refs.dot.setAttribute('fill',colors[status]);
-    if (!diagramView) refs.icon.style.color = colors[status];
+    if (diagramView) {
+      refs.stateRing.setAttribute('stroke',colors[status]);
+      refs.mark.textContent=diagramStatusMarks[status];
+    } else refs.icon.style.color = colors[status];
     refs.group.classList.toggle('allows-offline',!!node.allow_offline);
     refs.group.setAttribute('aria-label',`${node.name}: ${nodeStatusLabel(node)}`);
     refs.title.textContent = `${node.name}\n${nodeStatusLabel(node)}\n${node.addresses.join('\n')}`;
@@ -351,11 +377,25 @@ function updateState() {
   }
   drawList(); drawDetails(); updateEditorAddressStates();
 }
+function updateDiagramLinks() {
+  if(!diagramView)return;
+  const grouped=groupedDiagram();
+  for(const {from,to,group} of edgeElements.values()){
+    const local=from?.site&&to?.site===from.site;
+    const active=!!selected&&(from?.id===selected||to?.id===selected);
+    const visible=(!grouped||from||to)&&(showAllDiagramLinks||editLayout||active||local);
+    group.classList.toggle('diagram-link-hidden',!visible);
+    group.classList.toggle('diagram-link-muted',!active&&!showAllDiagramLinks&&!editLayout);
+  }
+}
 function drawLayoutSelection() {
+  $('diagram-group').disabled=editLayout;
+  $('diagram-links').disabled=editLayout;
   for(const [id,refs] of nodeElements){
     const active=editLayout?layoutSelection.has(id):id===selected;
     refs.group.classList.toggle('active',active);refs.group.setAttribute('aria-pressed',String(active));
   }
+  updateDiagramLinks();
   $('layout-help').hidden=!editLayout;
   const help=tr("Выбрано: {0}. ", layoutSelection.size)+(groupSelect?tr("Выбирайте узлы нажатием или рамкой; потяните выделенный узел для переноса группы."):tr("Ctrl/⌘ или Shift + клик — выбор узлов; Shift + рамка — выбор группы."))+tr(" Стрелки — сдвиг, Esc — снять выделение.");
   if($('layout-help').textContent!==help)$('layout-help').textContent=help;
@@ -456,7 +496,8 @@ function openNode(id=null, duplicate=false) {
   const dialog=$('node-dialog');dialog.dataset.id=duplicate?'':id||'';dialog.dataset.revision=graph.revision;
   dialog.dataset.templateId=duplicate?node.id:'';
   $('node-dialog-title').textContent=duplicate?tr("Копия узла"):node?tr("Изменить узел"):tr("Новый узел");$('node-name').value=duplicate?tr("{0} (копия)", node.name.slice(0,492)):node?.name||'';$('node-kind').value=node?.kind||'Server';
-  $('site-options').replaceChildren(...siteNames().map(site=>new Option(site,site)));$('node-site').value=node?.site||'';
+  const focusedSite=groupedDiagram()?$('diagram-site').value.slice(5):'';
+  $('site-options').replaceChildren(...siteNames().map(site=>new Option(site,site)));$('node-site').value=node?.site??focusedSite;
   $('node-addresses').replaceChildren();
   for(const target of node?.addresses||[])addAddress(target,node.address_comments?.[target]||'',node.address_channels?.[target]||'');
   if(!node)addAddress();
@@ -558,7 +599,11 @@ $('node-form').addEventListener('submit',async event=>{
     if(channel)channels[target]=channel;
   }
   const old=graph.nodes.find(n=>n.id===id),template=graph.nodes.find(n=>n.id===dialog.dataset.templateId);
-  const node={id,name:$('node-name').value.trim(),kind:$('node-kind').value.trim(),addresses,address_comments:comments,site:$('node-site').value.trim(),address_channels:channels,notes:$('node-notes').value,enabled:$('node-enabled').checked,allow_offline:$('node-allow-offline').checked,x:old?.x??(template?template.x+(template.x>1e7-60?-60:60):view.x+view.w/2),y:old?.y??(template?template.y+(template.y>1e7-60?-60:60):view.y+view.h/2)};
+  const site=$('node-site').value.trim();
+  const anchor=old||template||(groupedDiagram()&&(graph.nodes.find(n=>(n.site||'')===site)||graph.nodes[0]));
+  const offset=value=>value+(value>1e7-60?-60:60);
+  const node={id,name:$('node-name').value.trim(),kind:$('node-kind').value.trim(),addresses,address_comments:comments,site,address_channels:channels,notes:$('node-notes').value,enabled:$('node-enabled').checked,allow_offline:$('node-allow-offline').checked,
+    x:old?.x??(anchor?offset(anchor.x):view.x+view.w/2),y:old?.y??(anchor?offset(anchor.y):view.y+view.h/2)};
   node.netwatch=$('node-netwatch').checked;
   if(await change(g=>{const index=g.nodes.findIndex(n=>n.id===id);if(index<0)g.nodes.push(node);else g.nodes[index]=node;},Number(dialog.dataset.revision))){dialog.close();selectNode(id);}
 });
@@ -658,6 +703,19 @@ $('search').addEventListener('input',()=>drawList());$('filter').addEventListene
 $('fit').addEventListener('click',fit);
 $('view-classic').addEventListener('click',()=>switchMapView(false));
 $('view-diagram').addEventListener('click',()=>switchMapView(true));
+$('diagram-group').addEventListener('click',()=>{
+  cancelMapGesture();groupDiagram=!groupDiagram;autoFit=true;redrawMapView();
+});
+$('diagram-links').addEventListener('click',()=>{
+  showAllDiagramLinks=!showAllDiagramLinks;
+  $('diagram-links').setAttribute('aria-pressed',String(showAllDiagramLinks));
+  updateDiagramLinks();
+});
+$('diagram-site').addEventListener('change',()=>{
+  const value=$('diagram-site').value;
+  const site=diagramSites.find(item=>`site:${item.name}`===value);
+  if(site)focusDiagramSite(site);else fit();
+});
 function zoom(factor,at={x:view.x+view.w/2,y:view.y+view.h/2}) {
   if(view.w*factor<80||view.w*factor>1e7)return;
   autoFit=false;
@@ -672,6 +730,7 @@ $('edit-layout').addEventListener('click',()=>{
   groupSelect=false;$('group-select').hidden=!editLayout;$('group-select').setAttribute('aria-pressed','false');
   layoutSelection.clear();if(selected)layoutSelection.add(selected);
   if(editLayout)detailsOpen=false;
+  if(diagramView&&groupDiagram){autoFit=true;redrawMapView();}
   for(const refs of nodeElements.values()){
     if(editLayout)refs.group.setAttribute('aria-keyshortcuts',Object.keys(nodeMoveDirections).join(' '));
     else refs.group.removeAttribute('aria-keyshortcuts');
@@ -763,7 +822,7 @@ svg.addEventListener('pointerdown',event=>{
     if(touchPointers.size)return;
     blockMapClick=false;
   }
-  if(drag||event.button!==0||event.target.closest('.edge-hit,.address-point'))return;
+  if(drag||event.button!==0||event.target.closest('.edge-hit,.address-point,.diagram-site-title'))return;
   const node=event.target.closest('.map-node');if(node&&!editLayout)return;
   if(node&&(saving||movingWithKeyboard)){toast(tr("Дождитесь завершения сохранения"));return;}
   const additive=event.ctrlKey||event.metaKey||event.shiftKey;
