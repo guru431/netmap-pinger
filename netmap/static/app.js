@@ -3,10 +3,10 @@
 const $ = id => document.getElementById(id);
 const NS = 'http://www.w3.org/2000/svg';
 const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), b=>b.toString(16).padStart(2,'0')).join('');
-const labels = {up:'Доступен', partial:'Частично доступен', down:'Недоступен', unknown:'Ещё не проверен', stale:'Данные устарели', error:'Ошибка проверки', paused:'Мониторинг приостановлен', unmonitored:'Без мониторинга', gap:'Нет измерений', optional:'Недоступность допускается'};
-const colors = {up:'#149f77', partial:'#c38613', down:'#d74b5c', unknown:'#94a3b8', stale:'#7a8797', error:'#a26dc3', paused:'#a3adb9', unmonitored:'#94a3b8', gap:'#94a3b8', optional:'#7a8797'};
-const channelLabels = {wan:'Внешний (WAN)', lan:'Локальная сеть (LAN)', 'sites-vpn':'Площадки через VPN',
-  openvpn:'VPN OpenVPN', 'wg-my':'VPN WireGuard · личные', 'wg-work':'VPN WireGuard · рабочие', internet:'Публичный интернет'};
+const labels = {up:tr("Доступен"), partial:tr("Частично доступен"), down:tr("Недоступен"), unknown:tr("Ещё не проверен"), stale:tr("Данные устарели"), error:tr("Ошибка проверки"), paused:tr("Мониторинг приостановлен"), unmonitored:tr("Без мониторинга"), gap:tr("Нет измерений"), optional:tr("Недоступность допускается")};
+const colors = {up:'var(--up)', partial:'var(--partial)', down:'var(--down)', unknown:'var(--quiet)', stale:'var(--stale)', error:'var(--probe-error)', paused:'var(--quiet)', unmonitored:'var(--quiet)', gap:'var(--quiet)', optional:'var(--stale)'};
+const channelLabels = {wan:tr("Внешний (WAN)"), lan:tr("Локальная сеть (LAN)"), 'sites-vpn':tr("Площадки через VPN"),
+  openvpn:'VPN OpenVPN', 'wg-my':tr("VPN WireGuard · личные"), 'wg-work':tr("VPN WireGuard · рабочие"), internet:tr("Публичный интернет")};
 let state = null, graph = null, selected = null, renderedRevision = -1, editLayout = false, detailsOpen = false;
 let view = {x:-50, y:-50, w:1400, h:1000}, drag = null, saving = false, loading = false, online = false;
 let nodeElements = new Map(), edgeElements = new Map(), listElements = new Map(), toastTimer;
@@ -38,20 +38,20 @@ function toast(message) {
 async function api(path, options = {}) {
   const response = await fetch(path, {signal:AbortSignal.timeout(8000), ...options, headers:{'X-Netmap-Request':'1', ...options.headers}});
   if (!response.ok) {
-    let message = `Ошибка сервера (${response.status})`;
-    try { const data = await response.json(); message = typeof data.detail === 'string' ? data.detail : 'Проверьте адреса и значения полей'; } catch (_) { /* HTTP errors without JSON */ }
+    let message = tr("Ошибка сервера ({0})", response.status);
+    try { const data = await response.json(); message = typeof data.detail === 'string' ? serverMessage(data.detail) : tr("Проверьте адреса и значения полей"); } catch (_) { /* HTTP errors without JSON */ }
     throw new Error(message);
   }
   return response.json();
 }
 async function change(mutator, revision = graph?.revision) {
-  if (saving || !graph || !online) { toast('Дождитесь подключения и завершения сохранения'); return false; }
-  if (revision !== graph.revision) { toast('Карта изменилась. Закройте редактор и откройте его заново.'); return false; }
+  if (saving || !graph || !online) { toast(tr("Дождитесь подключения и завершения сохранения")); return false; }
+  if (revision !== graph.revision) { toast(tr("Карта изменилась. Закройте редактор и откройте его заново.")); return false; }
   const next = structuredClone(graph); mutator(next); saving = true;
   try {
     const saved = await api('api/map', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(next)});
     graph = saved; if (state) state.graph = saved;
-    drawGraph(); updateState(); toast('Карта сохранена'); return true;
+    drawGraph(); updateState(); toast(tr("Карта сохранена")); return true;
   } catch (error) { toast(error.message); return false; }
   finally { saving = false; flushKeyboardMoves(); }
 }
@@ -66,7 +66,7 @@ function statusFor(id) {
   return displayStatus(graph?.nodes.find(n=>n.id===id),rawStatusFor(id));
 }
 function nodeStatusLabel(node) {
-  return labels[rawStatusFor(node.id)]+(node.allow_offline?' · недоступность допускается':'');
+  return labels[rawStatusFor(node.id)]+(node.allow_offline?tr(" · недоступность допускается"):'');
 }
 function filteredNodes() {
   const query = $('search').value.trim().toLowerCase(), filter = $('filter').value;
@@ -130,7 +130,7 @@ function drawGraph() {
   nodeElements.clear(); edgeElements.clear();
   for (const edge of graph.edges) {
     const group = elem('g'), path = elem('path',{class:'edge-path',stroke:edge.color});
-    const hit = elem('path',{class:'edge-hit',tabindex:'0',role:'button','aria-label':edge.label || 'Изменить связь'});
+    const hit = elem('path',{class:'edge-hit',tabindex:'0',role:'button','aria-label':edge.label || tr("Изменить связь")});
     const label = elem('text',{class:'edge-label','text-anchor':'middle'},edge.label);
     const title = elem('title',{},edge.label || `${graph.nodes.find(n=>n.id===edge.from_id)?.name || '?'} ↔ ${graph.nodes.find(n=>n.id===edge.to_id)?.name || '?'}`);
     hit.append(title); hit.addEventListener('click',()=>openEdge(edge.id));
@@ -163,7 +163,7 @@ function drawGraph() {
     group.addEventListener('keydown',event=>{if(event.target===group&&(event.key==='Enter'||event.key===' ')){event.preventDefault();selectNode(node.id,editLayout&&(groupSelect||event.ctrlKey||event.metaKey||event.shiftKey));}});
     $('node-layer').append(group); nodeElements.set(node.id,{group,box,icon,dot,title,endpoints});
   }
-  $('map-name').textContent = graph.name; document.title = `${graph.name} · Карта сети`;
+  $('map-name').textContent = graph.name; document.title = tr("{0} · Карта сети", graph.name);
   $('map-empty').hidden = graph.nodes.length > 0; renderedRevision = graph.revision;
   if (first || autoFit) fit();
   if (selected && !graph.nodes.some(n=>n.id===selected)) selected = null;
@@ -177,7 +177,7 @@ function drawList(rebuild = false) {
     let refs = listElements.get(node.id);
     if (!refs) {
       const button = html('button','node-button'), dot = html('i','dot'), text = html('span','node-text');
-      const name = html('span','name',node.name), address = html('small','',(node.addresses[0] || 'Без адресов')+(node.addresses.length>1?` · ещё ${node.addresses.length-1}`:''));
+      const name = html('span','name',node.name), address = html('small','',(node.addresses[0] || tr("Без адресов"))+(node.addresses.length>1?tr(" · ещё {0}", node.addresses.length-1):''));
       text.append(name,address); button.append(dot,text); button.addEventListener('click',event=>selectNode(node.id,editLayout&&(groupSelect||event.ctrlKey||event.metaKey||event.shiftKey)));
       $('node-list').append(button); refs = {button,dot}; listElements.set(node.id,refs);
     }
@@ -188,7 +188,7 @@ function drawList(rebuild = false) {
     refs.button.title = `${node.name}\n${node.addresses.join('\n')}\n${nodeStatusLabel(node)}`;
     const mapNode = nodeElements.get(node.id); mapNode?.group.classList.toggle('dimmed',!visibleIds.has(node.id));
   }
-  $('list-count').textContent = `${visible.length} из ${graph.nodes.length} узлов`;
+  $('list-count').textContent = tr("{0} из {1} узлов", visible.length, graph.nodes.length);
 }
 function drawDetails() {
   const node = graph?.nodes.find(n=>n.id===selected); $('details').hidden = !node || !detailsOpen;
@@ -200,8 +200,8 @@ function drawDetails() {
   const status = statusFor(node.id); $('detail-status').textContent = labels[rawStatusFor(node.id)]; $('detail-status').style.color = colors[status];
   $('detail-offline-policy').hidden=!node.allow_offline;
   const netwatchActive=node.netwatch!==false&&node.enabled&&!node.allow_offline&&node.addresses.length>0;
-  $('detail-netwatch').textContent=!netwatchActive?'Netwatch выключен':
-    state?.netwatch_mail&&graph.settings.netwatch_recipient?'Netwatch включён':'Netwatch: почта не настроена';
+  $('detail-netwatch').textContent=!netwatchActive?tr("Netwatch выключен"):
+    state?.netwatch_mail&&graph.settings.netwatch_recipient?tr("Netwatch включён"):tr("Netwatch: почта не настроена");
   $('address-count').textContent = `(${node.addresses.length})`;
   const samples = new Map((state?.nodes[node.id]?.addresses || []).map(a=>[a.target,a]));
   const addressSignature=`${graph.revision}:${selected}`;
@@ -210,14 +210,14 @@ function drawDetails() {
     $('address-results').replaceChildren(...node.addresses.map(target=>{
       const row=html('div','address-row'),dot=html('i','dot'),body=html('div'),statusText=html('small');
       const metadata=[channelLabels[node.address_channels?.[target]],node.address_comments?.[target]].filter(Boolean);
-      body.append(html('strong','',target),html('span','address-comment',metadata.join(' · ')||'Без комментария'),statusText);
-      const historyButton=html('button','address-history','История');
-      historyButton.setAttribute('aria-label',`История ${target}`);historyButton.addEventListener('click',()=>openHistory(node.id,target));
-      const statisticsButton=html('button','','График');
-      statisticsButton.setAttribute('aria-label',`График ${target}`);
+      body.append(html('strong','',target),html('span','address-comment',metadata.join(' · ')||tr("Без комментария")),statusText);
+      const historyButton=html('button','address-history',tr("История"));
+      historyButton.setAttribute('aria-label',tr("История {0}", target));historyButton.addEventListener('click',()=>openHistory(node.id,target));
+      const statisticsButton=html('button','',tr("График"));
+      statisticsButton.setAttribute('aria-label',tr("График {0}", target));
       statisticsButton.addEventListener('click',()=>openStatistics(node.id,target));
       const actions=html('div','address-actions');
-      for(const [kind,label] of [['ping','Ping'],['trace','Трассировка']]){
+      for(const [kind,label] of [['ping','Ping'],['trace',tr("Трассировка")]]){
         const button=html('button','',label);button.setAttribute('aria-label',`${label}: ${target}`);
         button.addEventListener('click',()=>runDiagnostic(node,target,kind));actions.append(button);
       }
@@ -229,15 +229,15 @@ function drawDetails() {
     const sample = samples.get(target) || {status:'unknown'};
     const s = !online && ['up','partial','down'].includes(sample.status)?'stale':sample.status;
     const refs=addressElements.get(target);refs.dot.className=`dot ${displayStatus(node,s)}`;
-    const time = sample.checked_at ? new Date(sample.checked_at*1000).toLocaleTimeString('ru-RU',{timeZone:'Europe/Moscow'})+' МСК' : '';
-    refs.statusText.textContent=[labels[s],sample.rtt_ms!=null?`${Number(sample.rtt_ms.toFixed(2))} мс`:'',time,sample.detail||''].filter(Boolean).join(' · ');
+    const time = sample.checked_at ? new Date(sample.checked_at*1000).toLocaleTimeString(uiLocale,{timeZone:'Europe/Moscow'})+tr(" МСК") : '';
+    refs.statusText.textContent=[labels[s],sample.rtt_ms!=null?tr("{0} мс", Number(sample.rtt_ms.toFixed(2))):'',time,serverMessage(sample.detail)].filter(Boolean).join(' · ');
   }
   const edges = graph.edges.filter(e=>e.from_id===node.id||e.to_id===node.id);
   const edgeSignature=`${graph.revision}:${selected}`;
   if($('node-edges').dataset.signature!==edgeSignature){
   $('node-edges').replaceChildren(...edges.map(edge=>{
     const other = graph.nodes.find(n=>n.id===(edge.from_id===node.id?edge.to_id:edge.from_id));
-    const button = html('button','edge-button',`${other?.name || 'Свободный конец'}${edge.label?' · '+edge.label:''}`);
+    const button = html('button','edge-button',`${other?.name || tr("Свободный конец")}${edge.label?' · '+edge.label:''}`);
     button.addEventListener('click',()=>openEdge(edge.id));return button;
   }));
   $('node-edges').dataset.signature=edgeSignature;
@@ -246,7 +246,7 @@ function drawDetails() {
 function updateState() {
   if (!graph || !state) return;
   const counts = {}; for (const node of graph.nodes) {const s=statusFor(node.id);counts[s]=(counts[s]||0)+1;}
-  const counters = [['','Узлов',graph.nodes.length],['up','Доступны',counts.up||0],['partial','Частично',counts.partial||0],['down','Недоступны',counts.down||0]];
+  const counters = [['',tr("Узлов"),graph.nodes.length],['up',tr("Доступны"),counts.up||0],['partial',tr("Частично"),counts.partial||0],['down',tr("Недоступны"),counts.down||0]];
   $('summary').replaceChildren(...counters.map(([cls,label,count])=>{const item=html('div',`summary-item ${cls}`);item.append(html('strong','',String(count)),document.createTextNode(label));return item;}));
   for (const node of graph.nodes) {
     const refs = nodeElements.get(node.id); if (!refs) continue;
@@ -259,8 +259,8 @@ function updateState() {
       const sample=samples.get(target);let endpointStatus=node.enabled?(sample?.status||'unknown'):'paused';
       if(!online&&['up','partial','down'].includes(endpointStatus))endpointStatus='stale';
       endpoint.circle.setAttribute('fill',colors[displayStatus(node,endpointStatus)]);
-      endpoint.point.setAttribute('aria-label',`${target}: ${labels[endpointStatus]}. Открыть историю`);
-      endpoint.title.textContent=`${target}\n${node.address_comments?.[target]||''}\n${labels[endpointStatus]}${sample?.rtt_ms!=null?' · '+Number(sample.rtt_ms.toFixed(2))+' мс':''}\nНажмите для истории`;
+      endpoint.point.setAttribute('aria-label',tr("{0}: {1}. Открыть историю", target, labels[endpointStatus]));
+      endpoint.title.textContent=tr("{0}\n{1}\n{2}{3}\nНажмите для истории", target, node.address_comments?.[target]||'', labels[endpointStatus], sample?.rtt_ms!=null?' · '+Number(sample.rtt_ms.toFixed(2))+tr(" мс"):'');
     }
   }
   drawList(); drawDetails(); updateEditorAddressStates();
@@ -271,7 +271,7 @@ function drawLayoutSelection() {
     refs.group.classList.toggle('active',active);refs.group.setAttribute('aria-pressed',String(active));
   }
   $('layout-help').hidden=!editLayout;
-  const help=`Выбрано: ${layoutSelection.size}. `+(groupSelect?'Выбирайте узлы нажатием или рамкой; потяните выделенный узел для переноса группы.':'Ctrl/⌘ или Shift + клик — выбор узлов; Shift + рамка — выбор группы.')+' Стрелки — сдвиг, Esc — снять выделение.';
+  const help=tr("Выбрано: {0}. ", layoutSelection.size)+(groupSelect?tr("Выбирайте узлы нажатием или рамкой; потяните выделенный узел для переноса группы."):tr("Ctrl/⌘ или Shift + клик — выбор узлов; Shift + рамка — выбор группы."))+tr(" Стрелки — сдвиг, Esc — снять выделение.");
   if($('layout-help').textContent!==help)$('layout-help').textContent=help;
 }
 function selectNode(id, toggle=false, preserve=false) {
@@ -292,11 +292,11 @@ async function refresh() {
     const info=data.monitor, age=info.last_completed?Math.max(0,Math.round(data.server_time-info.last_completed)):null;
     const stale=age!==null&&age>data.stale_after;
     $('connection').classList.toggle('error',!!info.last_error||stale||!info.running);
-    $('connection').textContent=info.last_error || (!info.running?'Сборщик остановлен':
-      `${info.last_completed?`Последний цикл: ${age} с назад · ${info.duration.toFixed(1)} с`:'Первый опрос'} · ${info.completed}/${info.targets} адресов · период ${data.graph.settings.interval} с${stale?' · данные устарели':''}`);
+    $('connection').textContent=serverMessage(info.last_error) || (!info.running?tr("Сборщик остановлен"):
+      tr("{0} · {1}/{2} адресов · период {3} с{4}", info.last_completed?tr("Последний цикл: {0} с назад · {1} с", age, info.duration.toFixed(1)):tr("Первый опрос"), info.completed, info.targets, data.graph.settings.interval, stale?tr(" · данные устарели"):''));
     updateState();
     if(typeof applyWatchIncident==='function')applyWatchIncident();
-  } catch(error) {online=false;$('connection').classList.add('error');$('connection').textContent='Нет связи с сервером. Статусы не обновляются.';updateState();}
+  } catch(error) {online=false;$('connection').classList.add('error');$('connection').textContent=tr("Нет связи с сервером. Статусы не обновляются.");updateState();}
   finally {loading=false;}
 }
 async function refreshLoop() {
@@ -308,7 +308,7 @@ async function refreshLoop() {
 function updateEditorAddressStates() {
   const dialog=$('node-dialog');if(!dialog.open)return;
   const samples=new Map((state?.nodes[dialog.dataset.id]?.addresses||[]).map(sample=>[sample.target,sample]));
-  const shortLabels={unknown:'Нет данных',stale:'Устарело',paused:'Пауза',error:'Ошибка'};
+  const shortLabels={unknown:tr("Нет данных"),stale:tr("Устарело"),paused:tr("Пауза"),error:tr("Ошибка")};
   for(const row of $('node-addresses').children){
     const target=row.querySelector('.address-input').value.trim().toLowerCase().replace(/\.$/,'');
     const sample=samples.get(target)||{status:'unknown'};
@@ -317,20 +317,20 @@ function updateEditorAddressStates() {
     const badge=row.querySelector('.editor-address-state');badge.className=`editor-address-state ${visual}`;
     badge.querySelector('.dot').className=`dot ${visual}`;
     badge.querySelector('.editor-state-label').textContent=shortLabels[status]||labels[status];
-    const checked=sample.checked_at?new Date(sample.checked_at*1000).toLocaleTimeString('ru-RU',{timeZone:'Europe/Moscow'})+' МСК':'';
-    badge.title=[labels[status],sample.rtt_ms!=null?`${Number(sample.rtt_ms.toFixed(2))} мс`:'',checked,sample.detail||''].filter(Boolean).join(' · ');
+    const checked=sample.checked_at?new Date(sample.checked_at*1000).toLocaleTimeString(uiLocale,{timeZone:'Europe/Moscow'})+tr(" МСК"):'';
+    badge.title=[labels[status],sample.rtt_ms!=null?tr("{0} мс", Number(sample.rtt_ms.toFixed(2))):'',checked,serverMessage(sample.detail)].filter(Boolean).join(' · ');
   }
 }
 function updateAddressOrder() {
   const rows=Array.from($('node-addresses').children);
   rows.forEach((row,index)=>{
-    row.setAttribute('aria-label',`Адрес ${index+1}${index===0?' — основной':''}`);
+    row.setAttribute('aria-label',tr("Адрес {0}{1}", index+1, index===0?tr(" — основной"):''));
     row.querySelector('.address-up').disabled=index===0;
     row.querySelector('.address-down').disabled=index===rows.length-1;
   });
 }
 function siteNames() {
-  return [...new Set((graph?.nodes||[]).map(node=>node.site).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ru',{numeric:true}));
+  return [...new Set((graph?.nodes||[]).map(node=>node.site).filter(Boolean))].sort((a,b)=>a.localeCompare(b,uiLocale,{numeric:true}));
 }
 function channelOptions(placeholder) {
   return [new Option(placeholder,''),...Object.entries(channelLabels).map(([value,label])=>new Option(label,value))];
@@ -338,17 +338,17 @@ function channelOptions(placeholder) {
 function addAddress(target='',comment='',channel='') {
   const row=html('div','address-editor'),fields=html('div','address-fields');
   row.setAttribute('role','group');row.tabIndex=-1;
-  const addressLabel=html('label','','IP-адрес или DNS-имя'),input=html('input','address-input');
-  input.value=target;input.required=true;input.maxLength=253;input.placeholder='192.0.2.10 или server.example';
+  const addressLabel=html('label','',tr("IP-адрес или DNS-имя")),input=html('input','address-input');
+  input.value=target;input.required=true;input.maxLength=253;input.placeholder=tr("192.0.2.10 или server.example");
   const inputLine=html('span','address-input-line'),badge=html('span','editor-address-state');
-  badge.append(html('i','dot unknown'),html('span','editor-state-label','Нет данных'));
+  badge.append(html('i','dot unknown'),html('span','editor-state-label',tr("Нет данных")));
   inputLine.append(input,badge);addressLabel.append(inputLine);input.addEventListener('input',updateEditorAddressStates);
-  const commentLabel=html('label','','Комментарий'),note=html('input','comment-input');
-  note.value=comment;note.maxLength=1000;note.placeholder='Например: WireGuard · wg0';commentLabel.append(note);
-  const channelLabel=html('label','','Канал'),channelSelect=html('select','address-channel');
-  channelSelect.replaceChildren(...channelOptions('Без метки'));channelSelect.value=channel;channelLabel.append(channelSelect);
+  const commentLabel=html('label','',tr("Комментарий")),note=html('input','comment-input');
+  note.value=comment;note.maxLength=1000;note.placeholder=tr("Например: WireGuard · wg0");commentLabel.append(note);
+  const channelLabel=html('label','',tr("Канал")),channelSelect=html('select','address-channel');
+  channelSelect.replaceChildren(...channelOptions(tr("Без метки")));channelSelect.value=channel;channelLabel.append(channelSelect);
   const actions=html('div','address-edit-actions');
-  for(const [className,label,direction] of [['address-up','Поднять адрес',-1],['address-down','Опустить адрес',1]]){
+  for(const [className,label,direction] of [['address-up',tr("Поднять адрес"),-1],['address-down',tr("Опустить адрес"),1]]){
     const button=html('button',className,direction<0?'↑':'↓');button.type='button';button.title=label;button.setAttribute('aria-label',label);
     button.addEventListener('click',()=>{
       const neighbor=direction<0?row.previousElementSibling:row.nextElementSibling;
@@ -360,7 +360,7 @@ function addAddress(target='',comment='',channel='') {
     });
     actions.append(button);
   }
-  const remove=html('button','remove-address','×');remove.type='button';remove.setAttribute('aria-label','Удалить адрес');remove.addEventListener('click',()=>{row.remove();updateAddressOrder();});
+  const remove=html('button','remove-address','×');remove.type='button';remove.setAttribute('aria-label',tr("Удалить адрес"));remove.addEventListener('click',()=>{row.remove();updateAddressOrder();});
   actions.append(remove);fields.append(addressLabel,commentLabel,channelLabel);row.append(fields,actions);$('node-addresses').append(row);
   return input;
 }
@@ -369,7 +369,7 @@ function openNode(id=null, duplicate=false) {
   const node=graph.nodes.find(n=>n.id===id);if(duplicate&&!node)return;
   const dialog=$('node-dialog');dialog.dataset.id=duplicate?'':id||'';dialog.dataset.revision=graph.revision;
   dialog.dataset.templateId=duplicate?node.id:'';
-  $('node-dialog-title').textContent=duplicate?'Копия узла':node?'Изменить узел':'Новый узел';$('node-name').value=duplicate?`${node.name.slice(0,492)} (копия)`:node?.name||'';$('node-kind').value=node?.kind||'Server';
+  $('node-dialog-title').textContent=duplicate?tr("Копия узла"):node?tr("Изменить узел"):tr("Новый узел");$('node-name').value=duplicate?tr("{0} (копия)", node.name.slice(0,492)):node?.name||'';$('node-kind').value=node?.kind||'Server';
   $('site-options').replaceChildren(...siteNames().map(site=>new Option(site,site)));$('node-site').value=node?.site||'';
   $('node-addresses').replaceChildren();
   for(const target of node?.addresses||[])addAddress(target,node.address_comments?.[target]||'',node.address_channels?.[target]||'');
@@ -387,41 +387,51 @@ function updateNetwatchControl() {
 function openEdge(id=null) {
   if(!graph)return;
   const dialog=$('edge-dialog'),edge=graph.edges.find(e=>e.id===id);dialog.dataset.id=id||'';dialog.dataset.revision=graph.revision;
-  const nodes=[...graph.nodes].sort((a,b)=>a.name.localeCompare(b.name,'ru',{sensitivity:'base',numeric:true}));
+  const nodes=[...graph.nodes].sort((a,b)=>a.name.localeCompare(b.name,uiLocale,{sensitivity:'base',numeric:true}));
   for(const select of [$('edge-from'),$('edge-to')]) {
     const hasGeometry=(edge?.points.length||0)>=2;
     select.required=!hasGeometry;
-    select.replaceChildren(new Option(hasGeometry?'Свободный конец':'Выберите узел',''),...nodes.map(n=>new Option(n.name,n.id)));
+    select.replaceChildren(new Option(hasGeometry?tr("Свободный конец"):tr("Выберите узел"),''),...nodes.map(n=>new Option(n.name,n.id)));
   }
   $('edge-from').value=(edge?edge.from_id:selected)||'';$('edge-to').value=edge?.to_id||'';$('edge-label').value=edge?.label||'';$('edge-color').value=edge?.color||'#7894a5';
   $('delete-edge').hidden=!edge;dialog.showModal();
 }
+function showSettingsSection(section) {
+  const map = section === 'map';
+  $('settings-form').hidden = !map;
+  $('settings-appearance').hidden = map;
+  $('settings-map-tab').setAttribute('aria-pressed', String(map));
+  $('settings-appearance-tab').setAttribute('aria-pressed', String(!map));
+}
 function openSettings() {
-  if(!graph)return;
-  const dialog=$('settings-dialog');dialog.dataset.revision=graph.revision;
+  const dialog=$('settings-dialog');
+  $('settings-map-tab').disabled=!graph;
+  showSettingsSection(graph ? 'map' : 'appearance');
+  if(!graph){dialog.showModal();return;}
+  dialog.dataset.revision=graph.revision;
   $('settings-name').value=graph.name;$('settings-interval').value=graph.settings.interval;$('settings-timeout').value=graph.settings.timeout;
   $('settings-netwatch-recipient').value=graph.settings.netwatch_recipient;
   $('settings-netwatch-minutes').value=graph.settings.netwatch_minutes;
   $('password-button').hidden=!state?.password_change;
-  $('settings-source').textContent=graph.source?`Источник: ${graph.source}`:'';$('import-notes').textContent=graph.import_notes.join('\n');dialog.showModal();
+  $('settings-source').textContent=graph.source?tr("Источник: {0}", graph.source):'';$('import-notes').textContent=graph.import_notes.join('\n');dialog.showModal();
 }
 function stopDiagnostic() {
-  if(diagnosticController){diagnosticController.abort();$('diagnostic-status').textContent='Остановлено';}
+  if(diagnosticController){diagnosticController.abort();$('diagnostic-status').textContent=tr("Остановлено");}
 }
 async function runDiagnostic(node,target,kind) {
   stopDiagnostic();
   const controller=new AbortController();diagnosticController=controller;
   const dialog=$('diagnostic-dialog'),output=$('diagnostic-output');
-  $('diagnostic-title').textContent=kind==='ping'?'Ping':'Трассировка';
+  $('diagnostic-title').textContent=kind==='ping'?'Ping':tr("Трассировка");
   $('diagnostic-target').textContent=`${node.name} · ${target}${node.address_comments?.[target]?' · '+node.address_comments[target]:''}`;
-  output.textContent='';$('diagnostic-status').textContent='Запуск…';$('diagnostic-stop').disabled=false;
+  output.textContent='';$('diagnostic-status').textContent=tr("Запуск…");$('diagnostic-stop').disabled=false;
   if(!dialog.open)dialog.showModal();
-  const timer=setTimeout(()=>{controller.abort();if(diagnosticController===controller)$('diagnostic-status').textContent='Превышено время ожидания ответа сервера';},55000);
+  const timer=setTimeout(()=>{controller.abort();if(diagnosticController===controller)$('diagnostic-status').textContent=tr("Превышено время ожидания ответа сервера");},55000);
   let reader;
   try{
     const response=await fetch('api/diagnostics',{method:'POST',headers:{'X-Netmap-Request':'1','Content-Type':'application/json'},
       body:JSON.stringify({node_id:node.id,target,command:kind}),signal:controller.signal});
-    if(!response.ok){let data;try{data=await response.json();}catch{}throw new Error(typeof data?.detail==='string'?data.detail:`Не удалось запустить команду (HTTP ${response.status})`);}
+    if(!response.ok){let data;try{data=await response.json();}catch{}throw new Error(typeof data?.detail==='string'?serverMessage(data.detail):tr("Не удалось запустить команду (HTTP {0})", response.status));}
     reader=response.body.getReader();const decoder=new TextDecoder();let pending='',finished=false;
     function consume(line){
       if(controller.signal.aborted||diagnosticController!==controller)return;
@@ -430,16 +440,16 @@ async function runDiagnostic(node,target,kind) {
         const follow=output.scrollHeight-output.scrollTop-output.clientHeight<40;
         output.textContent=(output.textContent+message.text+'\n').slice(-100000);
         if(follow)output.scrollTop=output.scrollHeight;
-      }else if(message.type==='done'){finished=true;$('diagnostic-status').textContent=message.returncode===0?'Команда завершена':`Команда завершена с кодом ${message.returncode}`;}
-      else if(message.type==='error'){finished=true;$('diagnostic-status').textContent=message.text;}
-      else if(message.type==='start')$('diagnostic-status').textContent='Выполняется…';
+      }else if(message.type==='done'){finished=true;$('diagnostic-status').textContent=message.returncode===0?tr("Команда завершена"):tr("Команда завершена с кодом {0}", message.returncode);}
+      else if(message.type==='error'){finished=true;$('diagnostic-status').textContent=serverMessage(message.text);}
+      else if(message.type==='start')$('diagnostic-status').textContent=tr("Выполняется…");
     }
     while(true){
       const {value,done}=await reader.read();pending+=decoder.decode(value||new Uint8Array(),{stream:!done});
       const lines=pending.split('\n');pending=lines.pop();for(const line of lines)consume(line);
       if(done){if(pending)consume(pending);break;}
     }
-    if(!finished)throw new Error('Связь прервалась до завершения команды');
+    if(!finished)throw new Error(tr("Связь прервалась до завершения команды"));
   }catch(error){if(!controller.signal.aborted)$('diagnostic-status').textContent=error.message;}
   finally{
     clearTimeout(timer);if(reader)await reader.cancel().catch(()=>{});
@@ -456,7 +466,7 @@ $('node-form').addEventListener('submit',async event=>{
     const target=row.querySelector('.address-input').value.trim(),comment=row.querySelector('.comment-input').value.trim();
     if(!target)continue;
     const key=target.toLowerCase().replace(/\.$/,'');
-    if(addresses.some(a=>a.toLowerCase().replace(/\.$/,'')===key)){toast('Этот адрес уже указан');return;}
+    if(addresses.some(a=>a.toLowerCase().replace(/\.$/,'')===key)){toast(tr("Этот адрес уже указан"));return;}
     addresses.push(target);comments[target]=comment;
     const channel=row.querySelector('.address-channel').value;
     if(channel)channels[target]=channel;
@@ -472,12 +482,12 @@ $('node-allow-offline').addEventListener('change',updateNetwatchControl);
 $('node-enabled').addEventListener('change',updateNetwatchControl);
 $('delete-node').addEventListener('click',async()=>{
   const dialog=$('node-dialog'),id=dialog.dataset.id;
-  if(confirm('Удалить узел и все привязанные к нему связи?')&&await change(g=>{g.nodes=g.nodes.filter(n=>n.id!==id);g.edges=g.edges.filter(e=>e.from_id!==id&&e.to_id!==id);},Number(dialog.dataset.revision))){dialog.close();selected=null;drawDetails();}
+  if(confirm(tr("Удалить узел и все привязанные к нему связи?"))&&await change(g=>{g.nodes=g.nodes.filter(n=>n.id!==id);g.edges=g.edges.filter(e=>e.from_id!==id&&e.to_id!==id);},Number(dialog.dataset.revision))){dialog.close();selected=null;drawDetails();}
 });
 $('edge-form').addEventListener('submit',async event=>{
   event.preventDefault();const dialog=$('edge-dialog'),id=dialog.dataset.id||newId(),old=graph.edges.find(e=>e.id===id);
   const from=$('edge-from').value||null,to=$('edge-to').value||null;
-  if(from&&from===to){toast('Выберите два разных узла');return;}
+  if(from&&from===to){toast(tr("Выберите два разных узла"));return;}
   const points=structuredClone(old?.points||[]);
   if(points.length>=2){
     for(const [before,after,index] of [[old.from_id,from,0],[old.to_id,to,points.length-1]]){
@@ -490,7 +500,7 @@ $('edge-form').addEventListener('submit',async event=>{
   if(await change(g=>{const i=g.edges.findIndex(e=>e.id===id);if(i<0)g.edges.push(edge);else g.edges[i]=edge;},Number(dialog.dataset.revision)))dialog.close();
 });
 $('delete-edge').addEventListener('click',async()=>{
-  const dialog=$('edge-dialog');if(confirm('Удалить эту связь?')&&await change(g=>g.edges=g.edges.filter(e=>e.id!==dialog.dataset.id),Number(dialog.dataset.revision)))dialog.close();
+  const dialog=$('edge-dialog');if(confirm(tr("Удалить эту связь?"))&&await change(g=>g.edges=g.edges.filter(e=>e.id!==dialog.dataset.id),Number(dialog.dataset.revision)))dialog.close();
 });
 $('settings-form').addEventListener('submit',async event=>{
   event.preventDefault();const dialog=$('settings-dialog');
@@ -502,6 +512,8 @@ $('settings-form').addEventListener('submit',async event=>{
     g.settings.netwatch_minutes=$('settings-netwatch-minutes').valueAsNumber;
   },Number(dialog.dataset.revision)))dialog.close();
 });
+$('settings-map-tab').addEventListener('click',()=>showSettingsSection('map'));
+$('settings-appearance-tab').addEventListener('click',()=>showSettingsSection('appearance'));
 const passwordDialog=$('password-dialog'),passwordForm=$('password-form');
 const passwordSubmit=$('password-submit'),passwordCancel=$('password-cancel'),passwordError=$('password-error');
 $('password-button').addEventListener('click',()=>passwordDialog.showModal());
@@ -517,7 +529,7 @@ passwordForm.addEventListener('submit',async event=>{
   if(passwordSubmit.disabled||passwordChanged)return;
   const current=$('password-current').value,replacement=$('password-new').value;
   if(replacement!==$('password-confirm').value){
-    passwordError.textContent='Новые пароли не совпадают';
+    passwordError.textContent=tr("Новые пароли не совпадают");
     passwordError.hidden=false;
     return;
   }
@@ -542,9 +554,9 @@ $('password-relogin').addEventListener('click',()=>location.reload());
 $('add-node').addEventListener('click',()=>openNode());$('edit-node').addEventListener('click',()=>openNode(selected));$('add-edge').addEventListener('click',()=>openEdge());$('settings-button').addEventListener('click',openSettings);
 $('duplicate-node').addEventListener('click',()=>openNode(selected,true));
 $('close-details').addEventListener('click',()=>{selected=null;detailsOpen=false;drawList();drawDetails();});
-$('focus-node').addEventListener('click',()=>{const node=graph.nodes.find(n=>n.id===selected);if(node){autoFit=false;view={x:node.x-250,y:node.y-200,w:500,h:400};viewChanged();if(window.innerWidth<851){detailsOpen=false;drawDetails();}}});
+$('focus-node').addEventListener('click',()=>{const node=graph.nodes.find(n=>n.id===selected);if(node){autoFit=false;view={x:node.x-250,y:node.y-200,w:500,h:400};viewChanged();if(mobileLayout.matches){detailsOpen=false;drawDetails();}}});
 $('toggle-list').addEventListener('click',()=>{
-  const mobile=window.innerWidth<851;
+  const mobile=mobileLayout.matches;
   const open=mobile?$('sidebar').classList.toggle('open'):!$('sidebar').classList.toggle('collapsed');
   $('toggle-list').setAttribute('aria-expanded',String(open));
   if(open){if(mobile){detailsOpen=false;drawDetails();}$('search').focus();}
@@ -590,7 +602,7 @@ async function flushKeyboardMoves() {
   try{
     while(keyboardMoves.length){
       const move=keyboardMoves.shift();if(!move.dx&&!move.dy)continue;
-      if(!move.ids.every(id=>graph?.nodes.some(n=>n.id===id))){keyboardMoves.length=0;toast('Узел больше не существует');break;}
+      if(!move.ids.every(id=>graph?.nodes.some(n=>n.id===id))){keyboardMoves.length=0;toast(tr("Узел больше не существует"));break;}
       const ok=await change(g=>moveGraphNodes(g,move.ids,move.dx,move.dy));
       if(!ok){keyboardMoves.length=0;await refresh();break;}
       const active=document.activeElement;
@@ -658,7 +670,7 @@ svg.addEventListener('pointerdown',event=>{
   }
   if(drag||event.button!==0||event.target.closest('.edge-hit,.address-point'))return;
   const node=event.target.closest('.map-node');if(node&&!editLayout)return;
-  if(node&&(saving||movingWithKeyboard)){toast('Дождитесь завершения сохранения');return;}
+  if(node&&(saving||movingWithKeyboard)){toast(tr("Дождитесь завершения сохранения"));return;}
   const additive=event.ctrlKey||event.metaKey||event.shiftKey;
   if(node&&!additive&&!groupSelect)selectNode(node.dataset.id,false,true);
   drag={pointerId:event.pointerId,start:world(event),clientX:event.clientX,clientY:event.clientY,view:{...view},id:node?.dataset.id||null,dx:0,dy:0,moved:false,revision:graph.revision,additive:additive||groupSelect};
@@ -743,12 +755,12 @@ function cancelMapGesture() {
 }
 window.addEventListener('blur',cancelMapGesture);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelMapGesture();});
-$('poll-now').addEventListener('click',async()=>{try{await api('api/poll',{method:'POST'});toast('Опрос запланирован');}catch(e){toast(e.message);}});
+$('poll-now').addEventListener('click',async()=>{try{await api('api/poll',{method:'POST'});toast(tr("Опрос запланирован"));}catch(e){toast(e.message);}});
 let pendingImport=null;
 function drawImportPreview(preview){
   const body=$('import-changes');
   body.replaceChildren();
-  $('import-revision').textContent=`Текущая ревизия ${preview.revision}`;
+  $('import-revision').textContent=tr("Текущая ревизия {0}", preview.revision);
   function list(title,items){
     if(!items.length)return;
     const rows=html('ul');
@@ -756,50 +768,53 @@ function drawImportPreview(preview){
     body.append(html('h3','',title),rows);
   }
   const nodeLabel=node=>`${node.name} [${node.id}]`;
-  const nodeDescription=node=>`${nodeLabel(node)} · ${node.addresses.join(', ')||'без адресов'}${node.enabled?'':' · опрос приостановлен'}`;
-  list('Новые узлы',preview.nodes.added.map(nodeDescription));
-  list('Удаляемые узлы',preview.nodes.removed.map(nodeDescription));
-  list('Изменения узлов',preview.nodes.changed.map(({before,after})=>{
+  const nodeDescription=node=>`${nodeLabel(node)} · ${node.addresses.join(', ')||tr("без адресов")}${node.enabled?'':tr(" · опрос приостановлен")}`;
+  list(tr("Новые узлы"),preview.nodes.added.map(nodeDescription));
+  list(tr("Удаляемые узлы"),preview.nodes.removed.map(nodeDescription));
+  list(tr("Изменения узлов"),preview.nodes.changed.map(({before,after})=>{
     const changes=[];
-    if(before.name!==after.name)changes.push(`название: ${before.name} → ${after.name}`);
+    if(before.name!==after.name)changes.push(tr("название: {0} → {1}", before.name, after.name));
     if(JSON.stringify(before.addresses)!==JSON.stringify(after.addresses))changes.push(
-      `адреса: ${before.addresses.join(', ')||'нет'} → ${after.addresses.join(', ')||'нет'}`);
-    if(before.enabled!==after.enabled)changes.push(after.enabled?'опрос возобновится':'опрос приостановится');
-    if(before.allow_offline!==after.allow_offline)changes.push(after.allow_offline?'недоступность допускается':'недоступность учитывается');
-    if(before.netwatch!==after.netwatch)changes.push(after.netwatch?'Netwatch включён':'Netwatch выключен');
-    if(before.site!==after.site)changes.push(`площадка: ${before.site||'без метки'} → ${after.site||'без метки'}`);
+      tr("адреса: {0} → {1}", before.addresses.join(', ')||tr("нет"), after.addresses.join(', ')||tr("нет")));
+    if(before.enabled!==after.enabled)changes.push(after.enabled?tr("опрос возобновится"):tr("опрос приостановится"));
+    if(before.allow_offline!==after.allow_offline)changes.push(after.allow_offline?tr("недоступность допускается"):tr("недоступность учитывается"));
+    if(before.netwatch!==after.netwatch)changes.push(after.netwatch?tr("Netwatch включён"):tr("Netwatch выключен"));
+    if(before.site!==after.site)changes.push(tr("площадка: {0} → {1}", before.site||tr("без метки"), after.site||tr("без метки")));
     for(const target of new Set([...Object.keys(before.address_channels||{}),...Object.keys(after.address_channels||{})])){
       const from=before.address_channels?.[target],to=after.address_channels?.[target];
-      if(from!==to)changes.push(`${target}: ${channelLabels[from]||'без метки'} → ${channelLabels[to]||'без метки'}`);
+      if(from!==to)changes.push(`${target}: ${channelLabels[from]||tr("без метки")} → ${channelLabels[to]||tr("без метки")}`);
     }
-    return `${nodeLabel(after)} · ${changes.join(' · ')||'изменены свойства'}`;
+    return `${nodeLabel(after)} · ${changes.join(' · ')||tr("изменены свойства")}`;
   }));
-  const endpoint=(name,id)=>id?`${name} [${id}]`:'свободный конец';
+  const endpoint=(name,id)=>id?`${name} [${id}]`:tr("свободный конец");
   const edgeDescription=edge=>`${endpoint(edge.from,edge.from_id)} → ${endpoint(edge.to,edge.to_id)}${edge.label?' · '+edge.label:''}`;
-  list('Новые связи',preview.edges.added.map(edgeDescription));
-  list('Удаляемые связи',preview.edges.removed.map(edgeDescription));
-  list('Изменения связей',preview.edges.changed.map(({before,after})=>{
+  list(tr("Новые связи"),preview.edges.added.map(edgeDescription));
+  list(tr("Удаляемые связи"),preview.edges.removed.map(edgeDescription));
+  list(tr("Изменения связей"),preview.edges.changed.map(({before,after})=>{
     const old=edgeDescription(before),next=edgeDescription(after);
     const text=old!==next?`${old} → ${next}`:next;
-    const change=before.color!==after.color?` · цвет: ${before.color} → ${after.color}`:
-      old===next?' · изменена геометрия':'';
+    const change=before.color!==after.color?tr(" · цвет: {0} → {1}", before.color, after.color):
+      old===next?tr(" · изменена геометрия"):'';
     return text+change;
   }));
-  const settings={interval:'Период опроса, с',timeout:'Тайм-аут ping, с',concurrency:'Одновременные проверки',
-    netwatch_recipient:'Почта Netwatch',netwatch_minutes:'Задержка Netwatch, мин.'};
-  list('Настройки карты',Object.entries(preview.settings).map(([key,{before,after}])=>`${settings[key]}: ${before} → ${after}`));
-  list('Адреса, которые перестанут проверяться',preview.stopped_targets);
-  if(!body.children.length)body.append(html('p','muted','Узлы, связи и настройки карты совпадают.'));
+  const settings={interval:tr("Период опроса, с"),timeout:tr("Тайм-аут ping, с"),concurrency:tr("Одновременные проверки"),
+    netwatch_recipient:tr("Почта Netwatch"),netwatch_minutes:tr("Задержка Netwatch, мин.")};
+  list(tr("Настройки карты"),Object.entries(preview.settings).map(([key,{before,after}])=>`${settings[key]}: ${before} → ${after}`));
+  list(tr("Адреса, которые перестанут проверяться"),preview.stopped_targets);
+  if(!body.children.length)body.append(html('p','muted',tr("Узлы, связи и настройки карты совпадают.")));
 }
 $('import-button').addEventListener('click',()=>$('import-file').click());
 $('import-file').addEventListener('change',async event=>{
   const file=event.target.files[0],current=graph;if(!file||!current)return;
   try{
-    if(file.size>16*1024*1024)throw new Error('Размер файла превышает 16 МБ');
-    const data=JSON.parse(await file.text());if(!Array.isArray(data?.nodes)||!Array.isArray(data.edges))throw new Error('Выберите JSON-копию карты');
+    if(file.size>16*1024*1024)throw new Error(tr("Размер файла превышает 16 МБ"));
+    const source=await file.text();
+    let data;
+    try{data=JSON.parse(source);}catch{throw new Error(tr("Не удалось прочитать JSON-копию карты"));}
+    if(!Array.isArray(data?.nodes)||!Array.isArray(data.edges))throw new Error(tr("Выберите JSON-копию карты"));
     const proposed={...current,...data,revision:current.revision};
     const preview=await api('api/map/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(proposed)});
-    if(preview.revision!==graph.revision)throw new Error('Карта изменилась. Выберите JSON-копию заново.');
+    if(preview.revision!==graph.revision)throw new Error(tr("Карта изменилась. Выберите JSON-копию заново."));
     pendingImport=proposed;drawImportPreview(preview);
     $('import-error').hidden=true;$('apply-import').disabled=false;
     $('import-dialog').showModal();
@@ -818,8 +833,6 @@ $('import-form').addEventListener('submit',async event=>{
   }
 });
 $('import-dialog').addEventListener('close',()=>{pendingImport=null;});
-const chromeObserver=new ResizeObserver(()=>document.documentElement.style.setProperty('--chrome-height',`${document.querySelector('.topbar').offsetHeight}px`));
-chromeObserver.observe(document.querySelector('.topbar'));
 new ResizeObserver(()=>{if(autoFit&&!drag&&!touchPointers.size)fit();}).observe(svg);
 const mobileLayout=matchMedia('(max-width:850px)');
 function updateListToggle(){ $('toggle-list').setAttribute('aria-expanded',String(mobileLayout.matches?$('sidebar').classList.contains('open'):!$('sidebar').classList.contains('collapsed'))); }

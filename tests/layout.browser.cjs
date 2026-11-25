@@ -56,8 +56,9 @@ async function check(browserType, mobile=false) {
       }
       if(name==='/api/diagnostics'){
         diagnosticCalls++;
-        return diagnosticCalls===1?route.fulfill({status:502,contentType:'text/html',body:'<h1>Bad gateway</h1>'}):
-          route.fulfill({status:503,json:{detail:'Diagnostic unavailable (test)'}});
+        if(diagnosticCalls===1)return route.fulfill({status:502,contentType:'text/html',body:'<h1>Bad gateway</h1>'});
+        const detail=diagnosticCalls===2?'Diagnostic unavailable (test)':'Адрес не найден у выбранного узла';
+        return route.fulfill({status:503,json:{detail}});
       }
       if(name==='/api/statistics'){
         statisticsQuery=Object.fromEntries(url.searchParams);
@@ -67,9 +68,11 @@ async function check(browserType, mobile=false) {
           items:[{name:'Router',target:'router.example',site:'Site B',channel:'wan',enabled:true,
             summary:measurement,points:[{...measurement,time:600},{...measurement,time:1200}]}]}});
       }
-      const file=name==='/'?'index.html':/^\/static\/[a-z.]+$/.test(name)?name.slice(8):null;
+      const file=name==='/'?'index.html':/^\/static\/(?:[a-z0-9.]+|pwa\/manifest(?:\.en)?\.webmanifest)$/.test(name)?name.slice(8):null;
       if(file)return route.fulfill({body:await fs.readFile(path.join(staticRoot,file)),
-        contentType:file.endsWith('.js')?'application/javascript':file.endsWith('.css')?'text/css':'text/html'});
+        headers:name==='/'?{'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'"}:{},
+        contentType:file.endsWith('.js')?'application/javascript':file.endsWith('.css')?'text/css':
+          file.endsWith('.webmanifest')?'application/manifest+json':'text/html'});
       return route.fulfill({status:404,body:'Not found'});
     });
     const selection=()=>page.locator('.map-node[aria-pressed="true"]').evaluateAll(nodes=>nodes.map(n=>n.dataset.id).sort());
@@ -364,8 +367,74 @@ async function check(browserType, mobile=false) {
     assert.deepEqual(statisticsQuery,{period:'1y',page:'1',node_id:'a',target:'router.example'});
     await statistics.getByRole('button',{name:'Закрыть'}).click();
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
+
+    const settings=page.locator('#settings-dialog');
+    const openAppearance=async()=>{
+      await page.locator('#settings-button').click();
+      await page.locator('#settings-appearance-tab').click();
+      await page.locator('#appearance-scale').locator('option').first().waitFor({state:'attached'});
+    };
+    const scale=page.locator('#appearance-scale'),font=page.locator('#appearance-font');
+    const language=page.locator('#interface-language');
+    const readAppearance=()=>page.evaluate(()=>{
+      const root=document.documentElement;
+      return {language:root.lang,theme:root.dataset.theme,zoom:getComputedStyle(root).zoom,
+        font:getComputedStyle(root).fontSize};
+    });
+    const fitViewport=()=>page.evaluate(()=>{
+      const workspace=document.querySelector('.workspace').getBoundingClientRect();
+      const header=document.querySelector('.topbar').getBoundingClientRect();
+      return workspace.bottom<=innerHeight+1&&workspace.bottom>=innerHeight-1&&header.right<=innerWidth;
+    });
+
+    await openAppearance();
+    assert.equal(await language.inputValue(),'ru');
+    assert.equal(await scale.locator('option[value="50"]').isDisabled(),mobile);
+    await settings.locator('[data-preview="dark"]').click();
+    await font.press('End');
+    assert.equal(await page.locator('#appearance-font-value').textContent(),'150%');
+    assert.equal(await fitViewport(),true);
+    const scaleValue=mobile?'75':'50';
+    await scale.selectOption(scaleValue);
+    const preferences={language:'ru',theme:'dark',zoom:mobile?'0.75':'0.5',font:'21px'};
+    assert.deepEqual(await readAppearance(),preferences);
+    assert.equal(await fitViewport(),true);
+    await language.selectOption('en');
+    await page.waitForFunction(()=>document.documentElement.lang==='en');
+    await page.locator('.map-node').first().waitFor();
+    assert.deepEqual(await readAppearance(),{...preferences,language:'en'});
+    assert.equal(await page.locator('#settings-button').textContent(),'Settings');
+    assert.equal(await page.locator('#search').getAttribute('placeholder'),'Name or any IP…');
+    assert.equal(await page.locator('.map-node[data-id="replacement"] .node-name').textContent(),'Новый узел');
+    assert.equal(await page.locator('link[rel="manifest"]').getAttribute('href'),'static/pwa/manifest.en.webmanifest');
+    if(mobile)await page.setViewportSize({width:320,height:640});
+    assert.equal(await fitViewport(),true);
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth),true);
+
+    await page.locator('#statistics-button').click();
+    await plot.waitFor();
+    assert.equal(await statistics.locator('#statistics-title').textContent(),'ICMP statistics');
+    assert.equal(await statistics.locator('#statistics-page').textContent(),'Page 1 of 2');
+    assert.deepEqual(await plot.evaluate(canvas=>[...canvas.getContext('2d').getImageData(0,0,1,1).data]),[24,33,42,255]);
+    await statistics.getByRole('button',{name:'Close'}).click();
+    await page.evaluate(()=>runDiagnostic(graph.nodes[0],'192.0.2.1','ping'));
+    assert.equal(await page.locator('#diagnostic-status').textContent(),'The selected node does not have that address');
+    await page.locator('#diagnostic-dialog [data-close]').first().click();
+
+    await openAppearance();
+    assert.equal(await scale.inputValue(),scaleValue);
+    assert.equal(await font.inputValue(),'150');
+    assert.equal(await settings.locator('input[value="dark"]').isChecked(),true);
+    await page.locator('#appearance-reset').click();
+    assert.deepEqual(await readAppearance(),{language:'en',theme:'dark',zoom:'1',font:'14px'});
+    await settings.locator('[data-preview="light"]').click();
+    await language.selectOption('ru');
+    await page.waitForFunction(()=>document.documentElement.lang==='ru');
+    await page.locator('.map-node').first().waitFor();
+    assert.deepEqual(await readAppearance(),{language:'ru',theme:'light',zoom:'1',font:'14px'});
+    assert.equal(writes,9);
     assert.deepEqual(errors,[]);
-    console.log(`${browserType.name()} ${mobile?'390px touch':'1366px'}: layout, edge edit, history, statistics, watch links, JSON preview OK`);
+    console.log(`${browserType.name()} ${mobile?'390px touch':'1366px'}: layout, edge edit, history, statistics, watch links, JSON preview, appearance OK`);
     await context.close();
   } finally {await browser.close();}
 }
