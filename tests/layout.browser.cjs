@@ -32,11 +32,43 @@ async function check(browserType, mobile=false) {
     page.setDefaultTimeout(5000);
     const errors=[];page.on('pageerror',error=>errors.push(error.message));
     let stored=fixture(),writes=0,rejectSave=false,diagnosticCalls=0,statisticsQuery;
+    let account=null;
+    const directory={users:[{id:1,username:'fixture-admin',admin:true}],groups:[],members:[]};
+    const maps=[{id:1,name:'Initial map',personal:false,access:'edit'},{id:2,name:'Shared map',personal:false,access:'edit'}];
+    const grants=new Map();
     await page.route('http://netmap.test/**',async route=>{
       const url=new URL(route.request().url()),name=url.pathname;
-      if(name==='/api/state')return route.fulfill({json:{graph:stored,nodes:{b:{status:'down'},c:{status:'partial'},d:{status:'stale'},
-        a:{status:'up',addresses:[{target:'192.0.2.1',status:'up',checked_at:100,rtt_ms:1}]}},server_time:100,stale_after:45,
-        monitor:{last_completed:100,running:true,duration:0,completed:0,targets:0}}});
+      if(name==='/api/state'){
+        const map=account&&maps.find(map=>map.id===Number(url.searchParams.get('map_id')||1));
+        return route.fulfill({json:{graph:map?{...stored,name:map.name}:stored,nodes:{b:{status:'down'},c:{status:'partial'},d:{status:'stale'},
+          a:{status:'up',addresses:[{target:'192.0.2.1',status:'up',checked_at:100,rtt_ms:1}]}},server_time:100,stale_after:45,
+          monitor:{last_completed:100,running:true,duration:0,completed:0,targets:0},
+          ...(map&&{account,map_id:map.id,personal:map.personal,access:account.admin||map.personal?'edit':'view'})}});
+      }
+      if(name==='/api/maps'){
+        if(route.request().method()==='GET')return route.fulfill({json:{maps}});
+        const map={...route.request().postDataJSON(),id:3,access:'edit'};
+        maps.push(map);
+        return route.fulfill({json:map});
+      }
+      if(name==='/api/admin/directory')return route.fulfill({json:directory});
+      if(name==='/api/admin/users'){
+        const user={id:2,username:route.request().postDataJSON().username,admin:false};
+        directory.users.push(user);
+        return route.fulfill({json:user});
+      }
+      if(name==='/api/admin/groups'){
+        const group={id:1,name:route.request().postDataJSON().name};
+        directory.groups.push(group);
+        return route.fulfill({json:group});
+      }
+      if(/^\/api\/admin\/maps\/\d+\/access$/.test(name)){
+        const mapId=Number(name.split('/')[4]);
+        if(route.request().method()==='GET')return route.fulfill({json:{grants:grants.get(mapId)||[]}});
+        const grant=route.request().postDataJSON();
+        grants.set(mapId,grant.access?[grant]:[]);
+        return route.fulfill({json:{access:grant.access}});
+      }
       if(name==='/api/map'){
         if(rejectSave){rejectSave=false;return route.fulfill({status:409,json:{detail:'Test conflict'}});}
         const next=route.request().postDataJSON();
@@ -539,7 +571,59 @@ async function check(browserType, mobile=false) {
     assert.deepEqual(await page.locator('.map-node').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('transform'))),
       dense.nodes.map(()=> 'translate(200 170)'));
     assert.equal(writes,9);
-    console.log(`${browserType.name()} ${mobile?'390px touch':'1366px'}: diagram placement, layout editing, history, statistics, watch, JSON preview and appearance OK`);
+
+    account=directory.users[0];
+    await page.goto('http://netmap.test/?map=2');
+    await page.locator('#maps-button').waitFor();
+    await page.locator('#settings-button').click();
+    await settings.getByRole('button',{name:'Пользователи',exact:true}).click();
+    await settings.getByLabel('Логин',{exact:true}).fill('fixture-viewer');
+    await settings.getByLabel('Начальный пароль').fill('synthetic-passphrase');
+    await settings.getByRole('button',{name:'Создать аккаунт'}).click();
+    await settings.locator('#account-list').getByText('fixture-viewer').waitFor();
+    await settings.getByRole('button',{name:'Группы',exact:true}).click();
+    await settings.getByLabel('Название новой группы').fill('Operators');
+    await settings.getByRole('button',{name:'Создать группу'}).click();
+    await settings.locator('#group-members').getByLabel('fixture-viewer').waitFor();
+    await settings.locator('[data-close]').first().click();
+    await page.locator('#maps-button').click();
+    const mapsDialog=page.locator('#maps-dialog');
+    await mapsDialog.getByRole('button',{name:'Доступ к текущей карте'}).click();
+    const accessDialog=page.getByRole('dialog',{name:'Доступ к текущей карте'});
+    assert.equal(await accessDialog.locator('#access-map-name').textContent(),'Shared map');
+    for(const [kind,id,name] of [['group',1,'Группа · Operators'],['user',2,'Пользователь · fixture-viewer']]){
+      await accessDialog.getByLabel('Пользователь или группа').selectOption(`${kind}:${id}`);
+      await accessDialog.getByRole('button',{name:'Сохранить доступ'}).click();
+      await accessDialog.getByText(`${name} · Просмотр`,{exact:true}).waitFor();
+      assert.deepEqual([...grants],[[2,[{kind,principal_id:id,access:'view'}]]]);
+      await accessDialog.getByRole('button',{name:'Отозвать'}).click();
+      await accessDialog.getByText(`${name} · Просмотр`,{exact:true}).waitFor({state:'hidden'});
+      assert.deepEqual(grants.get(2),[]);
+    }
+    await accessDialog.locator('[data-close]').click();
+    await page.locator('#maps-button').click();
+    await mapsDialog.getByLabel('Название новой карты').fill('My map');
+    await mapsDialog.getByRole('button',{name:'Создать карту'}).click();
+    await page.waitForURL('**/?map=3');
+    assert.equal(maps[2].personal,true);
+    await page.locator('#maps-button').click();
+    assert.equal(await mapsDialog.getByRole('button',{name:'Доступ к текущей карте'}).count(),0);
+    await mapsDialog.locator('[data-close]').click();
+
+    account=directory.users[1];
+    await page.goto('http://netmap.test/?map=2');
+    await page.locator('#maps-button').waitFor();
+    await page.locator('#settings-button').click();
+    assert.equal(await settings.getByRole('button',{name:/^(Пользователи|Группы)$/}).count(),0);
+    await settings.getByRole('button',{name:'Аккаунт',exact:true}).click();
+    await settings.getByText('fixture-viewer').waitFor();
+    await settings.getByRole('button',{name:'Сменить пароль'}).waitFor();
+    await settings.locator('[data-close]').first().click();
+    await page.locator('#maps-button').click();
+    assert.equal(await mapsDialog.getByRole('button',{name:'Доступ к текущей карте'}).count(),0);
+    await mapsDialog.getByRole('button',{name:'Создать карту'}).waitFor();
+    assert.deepEqual(errors,[]);
+    console.log(`${browserType.name()} ${mobile?'390px touch':'1366px'}: layout, appearance, settings and current map access OK`);
     await context.close();
   } finally {await browser.close();}
 }

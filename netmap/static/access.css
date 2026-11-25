@@ -14,3 +14,5 @@
 .access-error{color:var(--error);overflow-wrap:anywhere}
 #no-maps{top:34%}
 #access-dialog{width:min(570px,calc(100% - 24px))}
+#access-button{margin-top:10px}
+.access-map-name{font-weight:600;overflow-wrap:anywhere}

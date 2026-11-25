@@ -188,8 +188,11 @@
   <dialog id="settings-dialog" aria-labelledby="settings-title">
     <div class="dialog-title"><h2 id="settings-title" data-i18n>Настройки</h2><button type="button" data-close aria-label="Закрыть" data-i18n-attrs="aria-label">×</button></div>
     <div class="settings-sections" role="group" aria-label="Разделы настроек" data-i18n-attrs="aria-label">
-      <button type="button" id="settings-map-tab" aria-pressed="true" aria-controls="settings-form" data-i18n>Карта</button>
-      <button type="button" id="settings-appearance-tab" aria-pressed="false" aria-controls="settings-appearance" data-i18n>Оформление</button>
+      <button type="button" id="settings-map-tab" data-settings-section="map" aria-pressed="true" aria-controls="settings-form" data-i18n>Карта</button>
+      <button type="button" id="settings-appearance-tab" data-settings-section="appearance" aria-pressed="false" aria-controls="settings-appearance" data-i18n>Оформление</button>
+      <button type="button" id="settings-account-tab" data-settings-section="account" aria-pressed="false" aria-controls="settings-account" hidden data-i18n>Аккаунт</button>
+      <button type="button" id="settings-users-tab" data-settings-section="users" aria-pressed="false" aria-controls="access-users" hidden data-i18n>Пользователи</button>
+      <button type="button" id="settings-groups-tab" data-settings-section="groups" aria-pressed="false" aria-controls="access-groups" hidden data-i18n>Группы</button>
     </div>
     <section id="settings-appearance" hidden>
       <fieldset class="theme-picker">
@@ -233,6 +236,36 @@
       <p id="settings-source" class="muted"></p><div id="import-notes" class="muted"></div>
       <div class="dialog-actions"><button type="button" data-close data-i18n>Отмена</button><button type="submit" class="primary" data-i18n>Сохранить</button></div>
     </form>
+    <section id="settings-account" hidden>
+      <div class="account-bar">
+        <strong id="account-username"></strong>
+        <button type="button" id="account-password" class="text-button" data-i18n>Сменить пароль</button>
+        <button type="button" id="logout-button" class="text-button" data-i18n>Выйти</button>
+      </div>
+      <p id="account-error" class="access-error" role="alert" hidden></p>
+    </section>
+    <div id="directory-notices" hidden>
+      <p id="directory-error" class="access-error" role="alert" hidden></p>
+      <p id="directory-status" class="muted" role="status" hidden></p>
+    </div>
+    <section id="access-users" hidden>
+      <div id="account-list" class="access-list"></div>
+      <form id="create-user-form" class="access-form">
+        <label for="new-user-name" data-i18n>Логин</label><input id="new-user-name" autocomplete="off" required maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}">
+        <p class="muted" data-i18n>Латинские буквы, цифры, точка, дефис и подчёркивание.</p>
+        <label for="new-user-password" data-i18n>Начальный пароль</label><input id="new-user-password" type="password" autocomplete="new-password" required minlength="12" maxlength="72">
+        <p class="muted" data-i18n>Не менее 12 символов и не более 72 байт.</p>
+        <div class="dialog-actions"><button type="submit" class="primary" data-i18n>Создать аккаунт</button></div>
+      </form>
+    </section>
+    <section id="access-groups" hidden>
+      <label for="group-picker" data-i18n>Группа</label><select id="group-picker"></select>
+      <div id="group-members" class="access-list"></div>
+      <form id="create-group-form" class="access-form">
+        <label for="new-group-name" data-i18n>Название новой группы</label><input id="new-group-name" maxlength="200" required>
+        <div class="dialog-actions"><button type="submit" class="primary" data-i18n>Создать группу</button></div>
+      </form>
+    </section>
   </dialog>
   <dialog id="password-dialog" aria-labelledby="password-title">
     <div class="dialog-title"><h2 id="password-title" data-i18n>Смена пароля</h2></div>
@@ -262,55 +295,27 @@
   </dialog>
   <dialog id="maps-dialog" aria-labelledby="maps-title">
     <div class="dialog-title"><h2 id="maps-title" data-i18n>Карты</h2><button type="button" data-close aria-label="Закрыть" data-i18n-attrs="aria-label">×</button></div>
-    <div class="account-bar">
-      <strong id="account-username"></strong>
-      <button type="button" id="account-password" class="text-button" data-i18n>Сменить пароль</button>
-      <button type="button" id="logout-button" class="text-button" data-i18n>Выйти</button>
-    </div>
     <div id="available-maps" class="access-list"></div>
+    <button type="button" id="access-button" hidden data-i18n>Доступ к текущей карте</button>
     <p id="maps-error" class="access-error" role="alert" hidden></p>
     <form id="create-map-form" class="access-form">
       <label for="new-map-name" data-i18n>Название новой карты</label><input id="new-map-name" maxlength="200" required>
       <div id="new-map-type-field" hidden><label for="new-map-type" data-i18n>Тип карты</label><select id="new-map-type"><option value="personal" data-i18n>Личная карта</option><option value="shared" data-i18n>Общая карта</option></select></div>
-      <div class="dialog-actions"><button type="button" id="access-button" hidden data-i18n>Управление доступом</button><button type="submit" class="primary" data-i18n>Создать карту</button></div>
+      <div class="dialog-actions"><button type="submit" class="primary" data-i18n>Создать карту</button></div>
     </form>
   </dialog>
-  <dialog id="access-dialog" aria-labelledby="access-title">
-    <div class="dialog-title"><h2 id="access-title" data-i18n>Управление доступом</h2><button type="button" data-close aria-label="Закрыть" data-i18n-attrs="aria-label">×</button></div>
-    <div id="access-tabs" class="settings-sections" role="group" aria-label="Разделы управления доступом" data-i18n-attrs="aria-label">
-      <button type="button" data-access-tab="users" aria-controls="access-users" aria-pressed="true" data-i18n>Пользователи</button>
-      <button type="button" data-access-tab="groups" aria-controls="access-groups" aria-pressed="false" data-i18n>Группы</button>
-      <button type="button" data-access-tab="grants" aria-controls="access-grants" aria-pressed="false" data-i18n>Доступ к картам</button>
-    </div>
+  <dialog id="access-dialog" aria-labelledby="access-title" aria-describedby="access-map-name">
+    <div class="dialog-title"><h2 id="access-title" data-i18n>Доступ к текущей карте</h2><button type="button" data-close aria-label="Закрыть" data-i18n-attrs="aria-label">×</button></div>
+    <p id="access-map-name" class="access-map-name"></p>
     <p id="access-error" class="access-error" role="alert" hidden></p>
     <p id="access-status" class="muted" role="status" hidden></p>
-    <section id="access-users">
-      <div id="account-list" class="access-list"></div>
-      <form id="create-user-form" class="access-form">
-        <label for="new-user-name" data-i18n>Логин</label><input id="new-user-name" autocomplete="off" required maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}">
-        <p class="muted" data-i18n>Латинские буквы, цифры, точка, дефис и подчёркивание.</p>
-        <label for="new-user-password" data-i18n>Начальный пароль</label><input id="new-user-password" type="password" autocomplete="new-password" required minlength="12" maxlength="72">
-        <p class="muted" data-i18n>Не менее 12 символов и не более 72 байт.</p>
-        <div class="dialog-actions"><button type="submit" class="primary" data-i18n>Создать аккаунт</button></div>
-      </form>
-    </section>
-    <section id="access-groups" hidden>
-      <label for="group-picker" data-i18n>Группа</label><select id="group-picker"></select>
-      <div id="group-members" class="access-list"></div>
-      <form id="create-group-form" class="access-form">
-        <label for="new-group-name" data-i18n>Название новой группы</label><input id="new-group-name" maxlength="200" required>
-        <div class="dialog-actions"><button type="submit" class="primary" data-i18n>Создать группу</button></div>
-      </form>
-    </section>
-    <section id="access-grants" hidden>
-      <label for="grant-map" data-i18n>Общая карта</label><select id="grant-map"></select>
-      <div id="grant-list" class="access-list"></div>
-      <form id="grant-form" class="access-form">
-        <label for="grant-principal" data-i18n>Пользователь или группа</label><select id="grant-principal" required></select>
-        <label for="grant-level" data-i18n>Уровень доступа</label><select id="grant-level"><option value="view" data-i18n>Просмотр</option><option value="edit" data-i18n>Редактирование</option></select>
-        <div class="dialog-actions"><button type="submit" class="primary" data-i18n>Сохранить доступ</button></div>
-      </form>
-    </section>
+    <p id="grant-empty" class="muted" hidden data-i18n>Сначала создайте пользователя или группу в настройках.</p>
+    <div id="grant-list" class="access-list"></div>
+    <form id="grant-form" class="access-form" hidden>
+      <label for="grant-principal" data-i18n>Пользователь или группа</label><select id="grant-principal" required></select>
+      <label for="grant-level" data-i18n>Уровень доступа</label><select id="grant-level"><option value="view" data-i18n>Просмотр</option><option value="edit" data-i18n>Редактирование</option></select>
+      <div class="dialog-actions"><button type="submit" class="primary" data-i18n>Сохранить доступ</button></div>
+    </form>
   </dialog>
   <dialog id="import-dialog" aria-labelledby="import-title">
     <form id="import-form">

@@ -529,12 +529,14 @@ function openEdge(id=null) {
   $('edge-from').value=(edge?edge.from_id:selected)||'';$('edge-to').value=edge?.to_id||'';$('edge-label').value=edge?.label||'';$('edge-color').value=edge?.color||'#7894a5';
   $('delete-edge').hidden=!edge;dialog.showModal();
 }
+const settingsTabs=document.querySelectorAll('[data-settings-section]');
 function showSettingsSection(section) {
-  const map = section === 'map';
-  $('settings-form').hidden = !map;
-  $('settings-appearance').hidden = map;
-  $('settings-map-tab').setAttribute('aria-pressed', String(map));
-  $('settings-appearance-tab').setAttribute('aria-pressed', String(!map));
+  for(const button of settingsTabs){
+    const selected=button.dataset.settingsSection===section;
+    button.setAttribute('aria-pressed',String(selected));
+    $(button.getAttribute('aria-controls')).hidden=!selected;
+  }
+  $('directory-notices').hidden=section!=='users'&&section!=='groups';
 }
 function openSettings() {
   const dialog=$('settings-dialog');
@@ -546,7 +548,7 @@ function openSettings() {
   $('settings-name').value=graph.name;$('settings-interval').value=graph.settings.interval;$('settings-timeout').value=graph.settings.timeout;
   $('settings-netwatch-recipient').value=graph.settings.netwatch_recipient;
   $('settings-netwatch-minutes').value=graph.settings.netwatch_minutes;
-  $('password-button').hidden=!state?.password_change;
+  $('password-button').hidden=!!state?.account||!state?.password_change;
   $('settings-source').textContent=graph.source?tr("Источник: {0}", graph.source):'';$('import-notes').textContent=graph.import_notes.join('\n');dialog.showModal();
 }
 function stopDiagnostic() {
@@ -651,8 +653,9 @@ $('settings-form').addEventListener('submit',async event=>{
     g.settings.netwatch_minutes=$('settings-netwatch-minutes').valueAsNumber;
   },Number(dialog.dataset.revision)))dialog.close();
 });
-$('settings-map-tab').addEventListener('click',()=>showSettingsSection('map'));
-$('settings-appearance-tab').addEventListener('click',()=>showSettingsSection('appearance'));
+for(const button of settingsTabs){
+  button.addEventListener('click',()=>showSettingsSection(button.dataset.settingsSection));
+}
 const passwordDialog=$('password-dialog'),passwordForm=$('password-form');
 const passwordSubmit=$('password-submit'),passwordCancel=$('password-cancel'),passwordError=$('password-error');
 function openPasswordDialog(){
