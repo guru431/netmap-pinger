@@ -30,6 +30,15 @@ async function check(browserType, mobile=false) {
     const context = await browser.newContext({viewport:mobile?{width:390,height:844}:{width:1366,height:900},hasTouch:mobile});
     const page = await context.newPage();
     page.setDefaultTimeout(5000);
+    await page.addInitScript(() => {
+      const schedule = window.setTimeout.bind(window);
+      // Keep the initial state load and explicit refreshes. A recurring poll can be
+      // cancelled while a test reloads the page and Playwright is fulfilling its route.
+      window.setTimeout = (callback, delay, ...args) => {
+        if (callback === window.refreshLoop) return 0;
+        return schedule(callback, delay, ...args);
+      };
+    });
     const errors=[];page.on('pageerror',error=>errors.push(error.message));
     let stored=fixture(),writes=0,rejectSave=false,diagnosticCalls=0,statisticsQuery;
     let account=null;
