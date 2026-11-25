@@ -1,0 +1,9 @@
+[Unit]
+Description=Private HTTP socket for Netmap Pinger
+
+[Socket]
+ListenStream=/run/netmap-pinger.sock
+SocketUser=netmap-pinger
+SocketGroup=www-data
+SocketMode=0660
+RemoveOnStop=yes

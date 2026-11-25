@@ -1,0 +1,34 @@
+[Unit]
+Description=Netmap Pinger and continuous ICMP collector
+Wants=network-online.target
+After=network-online.target
+Requires=netmap-pinger.socket
+After=netmap-pinger.socket
+
+[Service]
+Type=simple
+User=netmap-pinger
+Group=netmap-pinger
+WorkingDirectory=/opt/netmap-pinger
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=NETMAP_HOSTS=netmap.example.org,localhost
+Environment=NETMAP_PASSWORD_FILE=/var/lib/netmap-pinger-auth/netmap.htpasswd
+EnvironmentFile=-/etc/netmap-pinger/netmap-pinger.env
+ExecStart=/opt/netmap-pinger/venv/bin/python -m netmap.app --db /var/lib/netmap-pinger/netmap.sqlite --fd 3
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+StateDirectory=netmap-pinger
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/netmap-pinger /var/lib/netmap-pinger-auth
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# ping uses unprivileged datagram ICMP sockets; deployment verifies ping_group_range for this group.
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
