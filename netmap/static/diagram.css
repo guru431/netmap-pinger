@@ -16,81 +16,88 @@
   .topbar .map-toolbar button { padding-inline: 5px; }
 }
 .map-panel.diagram {
-  --diagram-stroke: light-dark(#9eb4c4,#546e82);
-  --diagram-symbol: light-dark(#175777,#94c9e5);
-  background-image: linear-gradient(light-dark(#dde7ee,#2b3945) 1px,transparent 1px),
-    linear-gradient(90deg,light-dark(#dde7ee,#2b3945) 1px,transparent 1px);
+  --diagram-front: light-dark(#08719a,#197da2);
+  --diagram-top: light-dark(#189ccb,#3badd5);
+  --diagram-side: light-dark(#084c70,#115577);
+  --diagram-rim: light-dark(#cef4ff,#bcecff);
+  --diagram-ink: light-dark(#156284,#8dd0ed);
+  --diagram-cloud-fill: light-dark(#e2f4fb,#244658);
+  background-image: linear-gradient(light-dark(#e5ecf2,#273640) 1px,transparent 1px),
+    linear-gradient(90deg,light-dark(#e5ecf2,#273640) 1px,transparent 1px);
   background-size: 24px 24px;
 }
-.diagram .node-box {
-  stroke: var(--diagram-stroke);
+.diagram-selection {
+  fill: none;
+  stroke: transparent;
   stroke-width: 2;
-  filter: none;
+  pointer-events: none;
 }
-.diagram .map-node:focus-visible .node-box {
+.diagram .map-node.active .diagram-selection,
+.diagram .map-node:focus-visible .diagram-selection {
   stroke: var(--focus);
-  stroke-width: 3;
 }
-.diagram .node-icon {
-  color: var(--diagram-symbol);
-  stroke-width: 1.8;
+.diagram .map-node.incident .diagram-selection {
+  stroke: light-dark(#b6720d,#f4bb5e);
+}
+.diagram .allows-offline .diagram-selection {
+  stroke-dasharray: 4 3;
+}
+.diagram .diagram-device-icon {
+  stroke: none;
+}
+.diagram .diagram-outline-icon {
+  fill: var(--diagram-cloud-fill);
+  color: var(--diagram-ink);
 }
 .diagram-status {
-  stroke: var(--surface);
-  stroke-width: 1.5;
+  stroke: var(--map-surface);
+  stroke-width: 2;
+}
+.diagram-text, .diagram-status, .diagram-address-status {
   pointer-events: none;
 }
-.diagram-text, .diagram-address-rule, .diagram-address circle {
-  pointer-events: none;
-}
-.diagram-name, .diagram-caption, .diagram-target {
+.diagram-name, .diagram-target {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.diagram-name, .diagram-address-label {
+  text-shadow: 1px 0 var(--map-surface), -1px 0 var(--map-surface),
+    0 1px var(--map-surface), 0 -1px var(--map-surface);
+}
 .diagram-name {
   color: var(--ink);
-  font-size: calc(14px * var(--font-scale, 1));
+  font-size: calc(12px * var(--font-scale, 1));
   font-weight: 650;
-  line-height: 21px;
-}
-.diagram-caption, .diagram-channel {
-  color: var(--muted);
-  font-size: calc(10px * var(--font-scale, 1));
-}
-.diagram-address {
-  cursor: pointer;
+  text-align: center;
+  line-height: calc(16px * var(--font-scale, 1));
 }
 .diagram-address-hit {
   fill: transparent;
 }
-.diagram-address:nth-of-type(odd) .diagram-address-hit {
-  fill: light-dark(#eef4f8,#25313e);
-}
 .diagram-address:hover .diagram-address-hit, .diagram-address:focus-visible .diagram-address-hit {
-  fill: light-dark(#dceff8,#2d4f62);
-}
-.diagram-address-rule {
-  stroke: var(--border);
+  fill: light-dark(#deedf6,#2d4f62);
 }
 .diagram-address-label {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 5px;
+  gap: 4px;
   height: 100%;
 }
 .diagram-target {
-  font: calc(12px * var(--font-scale, 1))/1 ui-monospace, Consolas, monospace;
+  font: calc(10.5px * var(--font-scale, 1))/1 ui-monospace, Consolas, monospace;
   color: var(--ink);
 }
 .diagram-channel {
   flex: none;
+  color: var(--muted);
+  font-size: calc(8px * var(--font-scale, 1));
   letter-spacing: .03em;
   font-weight: 650;
 }
 .diagram .edge-path {
-  opacity: .9;
+  opacity: .85;
+  stroke-width: 1.4;
 }
 .diagram .edge-open .edge-path {
   stroke-dasharray: 4 3;

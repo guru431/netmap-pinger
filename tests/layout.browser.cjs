@@ -117,11 +117,13 @@ async function check(browserType, mobile=false) {
     assert.equal(await page.locator('#view-diagram').getAttribute('aria-pressed'),'true');
     assert.deepEqual(await page.locator('.map-node .node-icon').evaluateAll(icons=>icons.map(icon=>icon.getAttribute('href'))),
       ['#diagram-server','#diagram-router','#diagram-switch','#diagram-firewall']);
+    assert.equal(await page.locator('.diagram .node-box').count(),0);
+    assert.equal(await page.locator('.diagram .diagram-symbol-hit').count(),stored.nodes.length);
     assert.deepEqual(await page.locator('.diagram-target').allTextContents(),stored.nodes[0].addresses);
     assert.deepEqual(await page.locator('.diagram-channel').allTextContents(),['LAN','WAN']);
     assert.equal(await page.locator('.edge-open .edge-end').count(),4);
-    assert.equal(await page.locator('#edge-layer .edge-path').first().getAttribute('d'),'M118.4 88.5 L180 50 L241.6 88.5');
-    assert.equal(await page.locator('#edge-layer .edge-path').last().getAttribute('d'),'M100 129.5 L100 388.5');
+    assert.equal(await page.locator('#edge-layer .edge-path').first().getAttribute('d'),'M100 100 L180 50 L260 100');
+    assert.equal(await page.locator('#edge-layer .edge-path').last().getAttribute('d'),'M100 100 L100 400');
     await page.locator('.diagram-address[data-target="router.example"] .diagram-address-hit').click();
     assert.equal(await page.locator('#history-target').inputValue(),'router.example');
     await page.locator('#history-dialog [data-close]').first().click();
@@ -463,7 +465,51 @@ async function check(browserType, mobile=false) {
     assert.deepEqual(await readAppearance(),{language:'ru',theme:'light',zoom:'1',font:'14px'});
     assert.equal(writes,9);
     assert.deepEqual(errors,[]);
-    console.log(`${browserType.name()} ${mobile?'390px touch':'1366px'}: layout, edge edit, history, statistics, watch links, JSON preview, appearance OK`);
+
+    // A map imported with coincident coordinates still shows each device and its labels.
+    const dense = fixture();
+    dense.revision = stored.revision+1;
+    for (const node of dense.nodes) { node.x=200; node.y=170; }
+    for (const [index,kind] of ['Access point','Cloud','NAS','WorkStation','Network printer','Phone','Camera','Device'].entries()) {
+      const id=`extra${index}`;
+      dense.nodes.push({...dense.nodes[2],id,name:`${kind} ${index+1}`,kind,addresses:[`192.0.2.${index+10}`,`${id}.example.org`]});
+      dense.edges.push({id,from_id:'c',to_id:id,points:[],label:'',color:'#7894a5'});
+    }
+    stored = dense;
+    await page.reload();
+    await page.locator('.diagram .map-node').first().waitFor();
+    const bounds = await page.locator('.diagram .map-node').evaluateAll(nodes=>nodes.map(node=>{
+      const box=node.getBBox(), {e:x,f:y}=node.transform.baseVal.getItem(0).matrix;
+      return [x+box.x,y+box.y,x+box.x+box.width,y+box.y+box.height];
+    }));
+    for (const [i,a] of bounds.entries()) {
+      for (const b of bounds.slice(i+1)) assert.ok(a[2]<=b[0]||b[2]<=a[0]||a[3]<=b[1]||b[3]<=a[1],
+        'diagram symbols and labels must have separate space');
+    }
+    assert.equal(await page.evaluate(()=>graph.edges.every(edge=>{
+      const {points}=edgeElements.get(edge.id);
+      return [[edge.from_id,points[0]],[edge.to_id,points.at(-1)]].every(([id,[x,y]])=>{
+        if (!id) return true;
+        const {e,f}=nodeElements.get(id).group.transform.baseVal.getItem(0).matrix;
+        return Math.hypot(x-e,y-f)<1e-4;
+      });
+    })),true);
+    if(screenshotDir)await page.screenshot({path:path.join(screenshotDir,`${browserType.name()}-${mobile?'touch':'desktop'}-diagram-dense.png`)});
+    const displaced = page.locator('.map-node[data-id="b"]');
+    const shiftedTransform = await displaced.getAttribute('transform');
+    assert.notEqual(shiftedTransform,'translate(200 170)');
+    const center = await displaced.evaluate(node=>{
+      const {e,f}=node.transform.baseVal.getItem(0).matrix;
+      return [e,f];
+    });
+    await page.locator('#edit-layout').click();
+    await dragWorld(...center,14,12,true);
+    assert.equal(await displaced.getAttribute('transform'),shiftedTransform);
+    await page.locator('#view-classic').click();
+    assert.deepEqual(await page.locator('.map-node').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('transform'))),
+      dense.nodes.map(()=> 'translate(200 170)'));
+    assert.equal(writes,9);
+    console.log(`${browserType.name()} ${mobile?'390px touch':'1366px'}: diagram placement, layout editing, history, statistics, watch, JSON preview and appearance OK`);
     await context.close();
   } finally {await browser.close();}
 }

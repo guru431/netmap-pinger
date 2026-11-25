@@ -27,6 +27,7 @@ const touchPointers = new Map();
 let pinch = null, blockMapClick = false;
 const svg = $('map');
 let diagramView = false;
+let diagramLayout = new Map();
 const mapViewKey = 'netmap-map-view';
 
 function elem(tag, attrs = {}, text = null) {
@@ -108,12 +109,19 @@ function fit() {
   const w = Math.max(200, Math.max(...xs)-x+90), h = Math.max(150, Math.max(...ys)-y+70);
   view = {x,y,w,h}; viewChanged();
 }
+function mapNodePosition(node) {
+  return diagramLayout.get(node.id) ?? node;
+}
+function mapNodeTransform(node, dx=0, dy=0) {
+  const {x,y}=mapNodePosition(node);
+  return `translate(${x+dx} ${y+dy})`;
+}
 function diagramViewport(nodes, edges = [], {padding=24,minWidth=200,minHeight=150} = {}) {
   let left=Infinity,top=Infinity,right=-Infinity,bottom=-Infinity;
   const include=([x1,y1,x2=x1,y2=y1])=>{
     left=Math.min(left,x1);top=Math.min(top,y1);right=Math.max(right,x2);bottom=Math.max(bottom,y2);
   };
-  for (const node of nodes) include(diagramBounds(node));
+  for (const node of nodes) include(diagramLayout.get(node.id).bounds);
   for (const edge of edges) for (const point of edgeElements.get(edge.id).points) include(point);
   const w=Math.max(minWidth,right-left+padding*2),h=Math.max(minHeight,bottom-top+padding*2);
   return {x:(left+right-w)/2,y:(top+bottom-h)/2,w,h};
@@ -129,10 +137,17 @@ function switchMapView(useDiagram) {
   cancelMapGesture();
   renderMapView(useDiagram);
   try { localStorage.setItem(mapViewKey,useDiagram?'diagram':'classic'); } catch { /* Optional preference. */ }
+  redrawMapView();
+}
+function redrawMapView() {
   drawGraph(); updateState();
   if(typeof applyWatchIncident==='function')applyWatchIncident();
 }
 try { renderMapView(localStorage.getItem(mapViewKey) === 'diagram'); } catch { /* Use the classic view. */ }
+document.documentElement.addEventListener('netmap-font-size-change',()=>{
+  if(!diagramView||!graph)return;
+  cancelMapGesture(); redrawMapView();
+});
 
 function edgePoints(edge, overrides = new Map(), from = graph.nodes.find(n=>n.id===edge.from_id), to = graph.nodes.find(n=>n.id===edge.to_id)) {
   if (edge.points.length >= 2) {
@@ -156,7 +171,7 @@ function edgePoints(edge, overrides = new Map(), from = graph.nodes.find(n=>n.id
 }
 function updateEdgeGeometry(edge, refs, overrides = new Map()) {
   const logical = edgePoints(edge,overrides,refs.from,refs.to);
-  const pts = diagramView ? diagramEdgePoints(logical,refs.from,refs.to) : logical;
+  const pts = diagramView ? diagramEdgePoints(logical,refs.from,refs.to,diagramLayout) : logical;
   const path = pts.map((p,i) => `${i?'L':'M'}${p[0]} ${p[1]}`).join(' ');
   refs.points = pts;
   refs.path.setAttribute('d',path); refs.hit.setAttribute('d',path);
@@ -189,6 +204,7 @@ function drawGraph() {
   const first = renderedRevision < 0;
   $('node-layer').replaceChildren(); $('edge-layer').replaceChildren();
   nodeElements.clear(); edgeElements.clear();
+  diagramLayout = diagramView ? layoutDiagram(graph.nodes,svg) : new Map();
   const nodes = new Map(graph.nodes.map(node=>[node.id,node]));
   for (const edge of graph.edges) {
     const from = nodes.get(edge.from_id) ?? null, to = nodes.get(edge.to_id) ?? null;
@@ -212,12 +228,13 @@ function drawGraph() {
     const refs = {from,to,path,hit,label,markers}; edgeElements.set(edge.id,refs); updateEdgeGeometry(edge,refs);
   }
   for (const node of graph.nodes) {
-    const group = elem('g',{class:'map-node',transform:`translate(${node.x} ${node.y})`,tabindex:'0',role:'button','data-id':node.id});
+    const group = elem('g',{class:'map-node',transform:mapNodeTransform(node),tabindex:'0',role:'button','data-id':node.id});
     if(editLayout)group.setAttribute('aria-keyshortcuts',Object.keys(nodeMoveDirections).join(' '));
-    const {content,icon,dot,title} = diagramView ? drawDiagramNode(group,node) : drawClassicNode(group,node);
+    const position = diagramLayout.get(node.id);
+    const {content,icon,dot,title} = diagramView ? drawDiagramNode(group,node,position) : drawClassicNode(group,node);
     const endpoints = new Map();
     node.addresses.forEach((target,index)=>{
-      const {point,circle} = diagramView ? drawDiagramAddress(node,target,index) : drawClassicAddress(node,index);
+      const {point,circle} = diagramView ? drawDiagramAddress(position,target,index) : drawClassicAddress(node,index);
       point.setAttribute('tabindex','0'); point.setAttribute('role','button'); point.setAttribute('data-target',target);
       const pointTitle=elem('title',{},target);point.append(pointTitle);
       const activate=event=>{event.stopPropagation();selectNode(node.id);openHistory(node.id,target);};
@@ -706,7 +723,7 @@ document.addEventListener('keydown',event=>{
 function cancelMapDrag() {
   const done=drag;drag=null;svg.classList.remove('dragging');
   if(done?.id){
-    for(const node of graph.nodes)if(done.ids.includes(node.id))nodeElements.get(node.id)?.group.setAttribute('transform',`translate(${node.x} ${node.y})`);
+    for(const node of graph.nodes)if(done.ids.includes(node.id))nodeElements.get(node.id)?.group.setAttribute('transform',mapNodeTransform(node));
     for(const edge of graph.edges)if(done.ids.includes(edge.from_id)||done.ids.includes(edge.to_id))updateEdgeGeometry(edge,edgeElements.get(edge.id));
   }
   if(done?.box){done.box.remove();layoutSelection.clear();for(const id of done.previousSelection)layoutSelection.add(id);drawList();drawDetails();}
@@ -769,13 +786,16 @@ svg.addEventListener('pointermove',event=>{
     const x=Math.min(p.x,drag.start.x),y=Math.min(p.y,drag.start.y),w=Math.abs(p.x-drag.start.x),h=Math.abs(p.y-drag.start.y);
     for(const [key,value] of Object.entries({x,y,width:w,height:h}))drag.box.setAttribute(key,value);
     layoutSelection.clear();for(const id of drag.baseIds)layoutSelection.add(id);
-    for(const node of filteredNodes())if(node.x>=x&&node.x<=x+w&&node.y>=y&&node.y<=y+h)layoutSelection.add(node.id);
+    for(const node of filteredNodes()){
+      const position=mapNodePosition(node);
+      if(position.x>=x&&position.x<=x+w&&position.y>=y&&position.y<=y+h)layoutSelection.add(node.id);
+    }
     drawLayoutSelection();
   }else if(drag.id){
     if(!drag.moved)return;
     drag.dx=p.x-drag.start.x;drag.dy=p.y-drag.start.y;
     layoutSelection.clear();for(const id of drag.ids)layoutSelection.add(id);drawLayoutSelection();
-    for(const node of graph.nodes)if(layoutSelection.has(node.id))nodeElements.get(node.id).group.setAttribute('transform',`translate(${node.x+drag.dx} ${node.y+drag.dy})`);
+    for(const node of graph.nodes)if(layoutSelection.has(node.id))nodeElements.get(node.id).group.setAttribute('transform',mapNodeTransform(node,drag.dx,drag.dy));
     const overrides=new Map(drag.ids.map(id=>[id,{dx:drag.dx,dy:drag.dy}]));
     for(const edge of graph.edges)if(layoutSelection.has(edge.from_id)||layoutSelection.has(edge.to_id))updateEdgeGeometry(edge,edgeElements.get(edge.id),overrides);
   }else{

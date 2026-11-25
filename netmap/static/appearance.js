@@ -82,10 +82,12 @@
     fontOutput.value = `${font}%`;
 
     function updateSizes() {
+      const previousFont = root.style.getPropertyValue('--font-scale');
       applySizes(Number(fontInput.value), Number(scaleInput.value));
       fontOutput.value = `${fontInput.value}%`;
       save(keys.font, fontInput.value);
       save(keys.scale, scaleInput.value);
+      if (root.style.getPropertyValue('--font-scale') !== previousFont) root.dispatchEvent(new Event('netmap-font-size-change'));
     }
 
     fontInput.addEventListener('input', updateSizes);
