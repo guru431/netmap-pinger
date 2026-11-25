@@ -10,7 +10,7 @@ setTimeout(()=>{console.error('Browser layout checks exceeded 90 seconds');proce
 const fixture = () => ({revision:1,name:'Layout test',source:'',import_notes:[],
   settings:{interval:15,timeout:1,concurrency:32,netwatch_recipient:'alerts@example.org',netwatch_minutes:10},
   nodes:[['a',100,100],['b',260,100],['c',550,240],['d',100,400]].map(([id,x,y])=>({
-    id,name:id,kind:'Server',x,y,addresses:id==='a'?['192.0.2.1','router.example']:[],notes:id==='a'?'Template notes':'',
+    id,name:id,kind:{a:'Server',b:'Router',c:'Switch',d:'Firewall'}[id],x,y,addresses:id==='a'?['192.0.2.1','router.example']:[],notes:id==='a'?'Template notes':'',
     enabled:id!=='a',allow_offline:id==='a',site:id==='a'?'Site B':'',
     address_comments:id==='a'?{'192.0.2.1':'LAN','router.example':'DNS'}:{},
     address_channels:id==='a'?{'192.0.2.1':'lan','router.example':'wan'}:{}})),
@@ -113,6 +113,28 @@ async function check(browserType, mobile=false) {
     assert.deepEqual(singleMove,{preview:[[260,100],[420,120],[565,250]],
       external:[[260,100],[420,120],[565,250]],partial:[[565,250],[578,286],[620,310]],unchanged:true});
     assert.deepEqual(stored,fixture());assert.equal(writes,0);
+    await page.locator('#view-diagram').click();
+    assert.equal(await page.locator('#view-diagram').getAttribute('aria-pressed'),'true');
+    assert.deepEqual(await page.locator('.map-node .node-icon').evaluateAll(icons=>icons.map(icon=>icon.getAttribute('href'))),
+      ['#diagram-server','#diagram-router','#diagram-switch','#diagram-firewall']);
+    assert.deepEqual(await page.locator('.diagram-target').allTextContents(),stored.nodes[0].addresses);
+    assert.deepEqual(await page.locator('.diagram-channel').allTextContents(),['LAN','WAN']);
+    assert.equal(await page.locator('.edge-open .edge-end').count(),4);
+    assert.equal(await page.locator('#edge-layer .edge-path').first().getAttribute('d'),'M118.4 88.5 L180 50 L241.6 88.5');
+    assert.equal(await page.locator('#edge-layer .edge-path').last().getAttribute('d'),'M100 129.5 L100 388.5');
+    await page.locator('.diagram-address[data-target="router.example"] .diagram-address-hit').click();
+    assert.equal(await page.locator('#history-target').inputValue(),'router.example');
+    await page.locator('#history-dialog [data-close]').first().click();
+    await page.reload();await page.locator('.diagram-address').first().waitFor();
+    assert.equal(await page.locator('#view-diagram').getAttribute('aria-pressed'),'true');
+    const screenshotDir=process.env.NETMAP_BROWSER_OUTPUT_DIR;
+    if(screenshotDir){
+      await fs.mkdir(screenshotDir,{recursive:true});
+      await page.screenshot({path:path.join(screenshotDir,`${browserType.name()}-${mobile?'touch':'desktop'}-diagram.png`)});
+    }
+    await page.locator('#view-classic').click();
+    assert.equal(await page.locator('#edge-layer .edge-path').first().getAttribute('d'),'M100 100 L180 50 L260 100');
+    assert.deepEqual(stored,fixture());assert.equal(writes,0);
     // Invalid report URLs neither consume the ten visible slots nor inflate the remainder.
     await page.waitForFunction(()=>watchNavigationError);
     const watchLinks=await page.evaluate(()=>{
@@ -181,14 +203,19 @@ async function check(browserType, mobile=false) {
     assert.deepEqual(await selection(),['a','b']);
     const internalPath=await page.locator('#edge-layer .edge-path').first().getAttribute('d');
     assert.equal(internalPath,stored.edges[0].points.map(([x,y],i)=>`${i?'L':'M'}${x} ${y}`).join(' '));
+    await page.locator('#view-diagram').click();
+    await page.locator('.map-node[data-id="a"]').focus();
     await page.keyboard.press('ArrowRight');await waitWrites(2);
     await page.keyboard.press('Shift+ArrowDown');await waitWrites(3);
     assert.deepEqual(stored.nodes.slice(0,2).map(n=>[n.x,n.y]),[[101+dx,110+dy],[261+dx,110+dy]]);
     const {x:ax,y:ay}=stored.nodes[0],{x:bx,y:by}=stored.nodes[1];
     const beforeCancel=structuredClone(stored);
+    const diagramPath=await page.locator('#edge-layer .edge-path').first().getAttribute('d');
     await dragWorld(ax,ay,20,20,true);
     assert.deepEqual(stored,beforeCancel);assert.equal(writes,3);
     assert.equal(await page.locator('.map-node[data-id="a"]').getAttribute('transform'),`translate(${ax} ${ay})`);
+    assert.equal(await page.locator('#edge-layer .edge-path').first().getAttribute('d'),diagramPath);
+    await page.locator('#view-classic').click();
     console.log('  move, edges, arrows and pointer cancellation passed');
     rejectSave=true;
     await dragWorld(ax,ay,20,20);
@@ -223,7 +250,6 @@ async function check(browserType, mobile=false) {
       assert.equal(writes,3);assert.deepEqual(stored,beforeCancel);
       assert.equal(await page.locator('.map-node[data-id="a"]').getAttribute('transform'),`translate(${ax} ${ay})`);
     }
-    const screenshotDir=process.env.NETMAP_BROWSER_OUTPUT_DIR;
     if(screenshotDir){
       await fs.mkdir(screenshotDir,{recursive:true});
       await page.screenshot({path:path.join(screenshotDir,`${browserType.name()}-${mobile?'touch':'desktop'}.png`)});
@@ -408,8 +434,11 @@ async function check(browserType, mobile=false) {
     assert.equal(await page.locator('.map-node[data-id="replacement"] .node-name').textContent(),'Новый узел');
     assert.equal(await page.locator('link[rel="manifest"]').getAttribute('href'),'static/pwa/manifest.en.webmanifest');
     if(mobile)await page.setViewportSize({width:320,height:640});
+    await page.getByRole('button',{name:'Diagram',exact:true}).click();
+    assert.equal(await page.locator('.map-node[data-id="replacement"] .diagram-name').textContent(),'Новый узел');
     assert.equal(await fitViewport(),true);
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth),true);
+    if(screenshotDir)await page.screenshot({path:path.join(screenshotDir,`${browserType.name()}-${mobile?'touch':'desktop'}-diagram-dark.png`)});
 
     await page.locator('#statistics-button').click();
     await plot.waitFor();

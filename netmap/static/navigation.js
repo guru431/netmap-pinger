@@ -87,8 +87,12 @@ function applyWatchIncident(){
   if(!nodes.length||nodes.length>200){if(nodes.length>200)banner.append(document.createTextNode(tr(" · Для истории выберите не больше 200 узлов.")));return;}
   const selectedNodes=graph.nodes.filter(node=>nodes.includes(node.id));
   autoFit=false;
-  const xs=selectedNodes.map(node=>node.x),ys=selectedNodes.map(node=>node.y);
-  view={x:Math.min(...xs)-110,y:Math.min(...ys)-100,w:Math.max(400,Math.max(...xs)-Math.min(...xs)+220),h:Math.max(300,Math.max(...ys)-Math.min(...ys)+200)};viewChanged();
+  if(diagramView)view=diagramViewport(selectedNodes,[],{minWidth:400,minHeight:300});
+  else{
+    const xs=selectedNodes.map(node=>node.x),ys=selectedNodes.map(node=>node.y);
+    view={x:Math.min(...xs)-110,y:Math.min(...ys)-100,w:Math.max(400,Math.max(...xs)-Math.min(...xs)+220),h:Math.max(300,Math.max(...ys)-Math.min(...ys)+200)};
+  }
+  viewChanged();
   openHistory('',null,{nodes,since,until});
 }
 fetch('../watch/navigation.json',{signal:AbortSignal.timeout(8000),cache:'no-store'})

@@ -14,8 +14,10 @@
   <link rel="stylesheet" href="static/statistics.css">
   <link rel="stylesheet" href="static/compact.css">
   <link rel="stylesheet" href="static/appearance.css">
+  <link rel="stylesheet" href="static/diagram.css">
   <script src="static/en.js" defer></script>
   <script src="static/i18n.js" defer></script>
+  <script src="static/diagram.js" defer></script>
   <script src="static/app.js" defer></script>
   <script src="static/history.js" defer></script>
   <script src="static/statistics.js" defer></script>
@@ -30,10 +32,23 @@
     <symbol id="icon-printer" viewBox="0 0 24 24"><path d="M6 9V2h12v7M6 18H3V9h18v9h-3M6 14h12v8H6zM17 11h1"/></symbol>
     <symbol id="icon-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><ellipse cx="12" cy="12" rx="4" ry="10"/><path d="M2 12h20M4 6h16M4 18h16"/></symbol>
     <symbol id="icon-camera" viewBox="0 0 24 24"><rect x="2" y="6" width="15" height="13" rx="2"/><path d="m17 10 5-3v12l-5-3M7 6V3h5v3"/></symbol>
+    <symbol id="diagram-router" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14"/><path d="M16 14V7m-2.5 2.5L16 7l2.5 2.5M16 18v7m-2.5-2.5L16 25l2.5-2.5M14 16H7m2.5-2.5L7 16l2.5 2.5M18 16h7m-2.5-2.5L25 16l-2.5 2.5"/></symbol>
+    <symbol id="diagram-switch" viewBox="0 0 32 32"><rect x="2" y="6" width="28" height="20" rx="2"/><path d="M7 12h17l-3-3m3 3-3 3M25 20H8l3-3m-3 3 3 3"/></symbol>
+    <symbol id="diagram-firewall" viewBox="0 0 32 32"><rect x="2" y="5" width="28" height="22" rx="1"/><path d="M2 12h28M2 20h28M11 5v7m10-7v7M7 12v8m9-8v8m9-8v8m-14 0v7m10-7v7"/></symbol>
+    <symbol id="diagram-access-point" viewBox="0 0 32 32"><path d="M3 8a21 21 0 0 1 26 0M7 12a15 15 0 0 1 18 0m-14 4a9 9 0 0 1 10 0m-5 4v4"/><rect x="5" y="24" width="22" height="5" rx="2"/></symbol>
+    <symbol id="diagram-server" viewBox="0 0 32 32"><rect x="5" y="2" width="22" height="28" rx="2"/><path d="M5 11h22M5 21h22M10 7h1m-1 9h1m-1 9h1m5-18h6m-6 9h6m-6 9h6"/></symbol>
+    <symbol id="diagram-storage" viewBox="0 0 32 32"><ellipse cx="16" cy="7" rx="11" ry="4"/><path d="M5 7v18a11 4 0 0 0 22 0V7M5 16a11 4 0 0 0 22 0"/></symbol>
+    <symbol id="diagram-cloud" viewBox="0 0 32 32"><path d="M9 24a6 6 0 0 1-1-12 8 8 0 0 1 15-1 6.5 6.5 0 0 1 1 13Z"/></symbol>
+    <symbol id="diagram-device" viewBox="0 0 32 32"><rect x="3" y="8" width="26" height="16" rx="3"/><path d="M8 14h1m-1 4h1m5-4h10m-10 4h10"/></symbol>
   </svg>
   <header class="topbar">
     <a class="brand" href="./"><span class="brand-mark" aria-hidden="true">⌘</span><span><span>Netmap Pinger</span><small id="map-name" data-i18n>Мониторинг</small></span></a>
-    <nav class="map-toolbar" aria-label="Управление картой" data-i18n-attrs="aria-label"><div><button id="fit" title="Показать всю карту" data-i18n-attrs="title" data-i18n>Вся карта</button><button id="zoom-in" aria-label="Приблизить" data-i18n-attrs="aria-label">+</button><button id="zoom-out" aria-label="Отдалить" data-i18n-attrs="aria-label">−</button></div><div><button id="edit-layout" aria-pressed="false" title="Ctrl/⌘ или Shift + клик — выбрать несколько узлов; Shift + рамка — выделить группу. Стрелки — шаг 1, Shift + стрелки — шаг 10. Положение сохраняется автоматически." data-i18n-attrs="title" data-i18n>Двигать узлы</button><button id="group-select" aria-pressed="false" title="Выбирайте узлы нажатием или обведите рамкой; потяните выделенный узел для переноса группы. Работает и на сенсорном экране." hidden data-i18n-attrs="title" data-i18n>Выделить группу</button></div><div role="group" aria-label="Добавить на карту" data-i18n-attrs="aria-label"><button id="add-node" class="primary" data-i18n>+ Узел</button><button id="add-edge" data-i18n>+ Связь</button></div></nav>
+    <nav class="map-toolbar" aria-label="Управление картой" data-i18n-attrs="aria-label">
+      <div class="map-views" role="group" aria-label="Вид карты" data-i18n-attrs="aria-label"><button id="view-classic" aria-pressed="true" data-i18n>Карта</button><button id="view-diagram" aria-pressed="false" data-i18n>Схема</button></div>
+      <div><button id="fit" title="Показать всю карту" data-i18n-attrs="title" data-i18n>Вся карта</button><button id="zoom-in" aria-label="Приблизить" data-i18n-attrs="aria-label">+</button><button id="zoom-out" aria-label="Отдалить" data-i18n-attrs="aria-label">−</button></div>
+      <div><button id="edit-layout" aria-pressed="false" title="Ctrl/⌘ или Shift + клик — выбрать несколько узлов; Shift + рамка — выделить группу. Стрелки — шаг 1, Shift + стрелки — шаг 10. Положение сохраняется автоматически." data-i18n-attrs="title" data-i18n>Двигать узлы</button><button id="group-select" aria-pressed="false" title="Выбирайте узлы нажатием или обведите рамкой; потяните выделенный узел для переноса группы. Работает и на сенсорном экране." hidden data-i18n-attrs="title" data-i18n>Выделить группу</button></div>
+      <div role="group" aria-label="Добавить на карту" data-i18n-attrs="aria-label"><button id="add-node" class="primary" data-i18n>+ Узел</button><button id="add-edge" data-i18n>+ Связь</button></div>
+    </nav>
     <div class="summary" id="summary" aria-label="Состояние сети" data-i18n-attrs="aria-label"></div>
     <div class="top-actions"><button id="toggle-list" aria-expanded="true" aria-controls="sidebar" data-i18n>Узлы</button><button id="settings-button" data-i18n>Настройки</button></div>
   </header>
@@ -44,7 +59,7 @@
       <footer class="sidebar-footer"><a href="api/export" download data-i18n>Скачать карту</a><button id="import-button" class="text-button" data-i18n>Загрузить копию</button><input id="import-file" type="file" accept="application/json,.json" hidden></footer>
     </aside>
     <section class="map-panel" aria-label="Карта сети" data-i18n-attrs="aria-label">
-      <svg id="map" xmlns="http://www.w3.org/2000/svg" aria-label="Узлы и связи сети" role="img" data-i18n-attrs="aria-label"><g id="edge-layer"></g><g id="node-layer"></g></svg>
+      <svg id="map" xmlns="http://www.w3.org/2000/svg" aria-label="Узлы и связи сети" role="group" data-i18n-attrs="aria-label"><g id="edge-layer"></g><g id="node-layer"></g></svg>
       <p id="layout-help" class="layout-help" role="status" hidden></p>
       <div class="map-empty" id="map-empty" hidden data-i18n>Добавьте узел или загрузите сохранённую карту.</div>
       <p id="incident-context" class="incident-context" role="status" hidden></p>
@@ -103,7 +118,7 @@
     <div class="dialog-title"><h2 id="node-dialog-title" data-i18n>Узел</h2><button type="button" data-close aria-label="Закрыть" data-i18n-attrs="aria-label">×</button></div>
     <label for="node-name" data-i18n>Название</label><input id="node-name" required maxlength="500">
     <label for="node-kind" data-i18n>Тип устройства</label><input id="node-kind" list="device-types" maxlength="100">
-    <datalist id="device-types"><option value="Server"><option value="WorkStation"><option value="Router"><option value="Switch"><option value="Network printer"><option value="Phone"><option value="Camera"><option value="Internet server"></datalist>
+    <datalist id="device-types"><option value="Server"><option value="WorkStation"><option value="Router"><option value="Switch"><option value="Firewall"><option value="Access point"><option value="NAS"><option value="Network printer"><option value="Phone"><option value="Camera"><option value="Internet server"><option value="Cloud"></datalist>
     <h3 data-i18n>Адреса и комментарии</h3><p class="muted" data-i18n>Меняйте порядок стрелками ↑ и ↓. Первый адрес — основной. Каждый IP или DNS-имя проверяется отдельно.</p>
     <label for="node-site" data-i18n>Площадка</label><input id="node-site" maxlength="100" list="site-options"><datalist id="site-options"></datalist>
     <div id="node-addresses"></div><button type="button" id="add-address" data-i18n>+ Адрес</button>

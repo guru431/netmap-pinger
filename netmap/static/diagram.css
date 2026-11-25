@@ -1,0 +1,102 @@
+.topbar .map-toolbar > .map-views {
+  gap: 0;
+}
+.map-views button:first-child {
+  border-radius: 4px 0 0 4px;
+}
+.map-views button:last-child {
+  margin-left: -1px;
+  border-radius: 0 4px 4px 0;
+}
+.map-views button[aria-pressed="true"], .map-views button:focus-visible {
+  position: relative;
+  z-index: 1;
+}
+@media (max-width: 850px) {
+  .topbar .map-toolbar button { padding-inline: 5px; }
+}
+.map-panel.diagram {
+  --diagram-stroke: light-dark(#9eb4c4,#546e82);
+  --diagram-symbol: light-dark(#175777,#94c9e5);
+  background-image: linear-gradient(light-dark(#dde7ee,#2b3945) 1px,transparent 1px),
+    linear-gradient(90deg,light-dark(#dde7ee,#2b3945) 1px,transparent 1px);
+  background-size: 24px 24px;
+}
+.diagram .node-box {
+  stroke: var(--diagram-stroke);
+  stroke-width: 2;
+  filter: none;
+}
+.diagram .map-node:focus-visible .node-box {
+  stroke: var(--focus);
+  stroke-width: 3;
+}
+.diagram .node-icon {
+  color: var(--diagram-symbol);
+  stroke-width: 1.8;
+}
+.diagram-status {
+  stroke: var(--surface);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+.diagram-text, .diagram-address-rule, .diagram-address circle {
+  pointer-events: none;
+}
+.diagram-name, .diagram-caption, .diagram-target {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.diagram-name {
+  color: var(--ink);
+  font-size: calc(14px * var(--font-scale, 1));
+  font-weight: 650;
+  line-height: 21px;
+}
+.diagram-caption, .diagram-channel {
+  color: var(--muted);
+  font-size: calc(10px * var(--font-scale, 1));
+}
+.diagram-address {
+  cursor: pointer;
+}
+.diagram-address-hit {
+  fill: transparent;
+}
+.diagram-address:nth-of-type(odd) .diagram-address-hit {
+  fill: light-dark(#eef4f8,#25313e);
+}
+.diagram-address:hover .diagram-address-hit, .diagram-address:focus-visible .diagram-address-hit {
+  fill: light-dark(#dceff8,#2d4f62);
+}
+.diagram-address-rule {
+  stroke: var(--border);
+}
+.diagram-address-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  height: 100%;
+}
+.diagram-target {
+  font: calc(12px * var(--font-scale, 1))/1 ui-monospace, Consolas, monospace;
+  color: var(--ink);
+}
+.diagram-channel {
+  flex: none;
+  letter-spacing: .03em;
+  font-weight: 650;
+}
+.diagram .edge-path {
+  opacity: .9;
+}
+.diagram .edge-open .edge-path {
+  stroke-dasharray: 4 3;
+}
+.diagram .edge-end {
+  fill: var(--map-surface);
+  stroke-width: 1.3;
+  pointer-events: none;
+}

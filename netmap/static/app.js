@@ -5,8 +5,13 @@ const NS = 'http://www.w3.org/2000/svg';
 const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), b=>b.toString(16).padStart(2,'0')).join('');
 const labels = {up:tr("Доступен"), partial:tr("Частично доступен"), down:tr("Недоступен"), unknown:tr("Ещё не проверен"), stale:tr("Данные устарели"), error:tr("Ошибка проверки"), paused:tr("Мониторинг приостановлен"), unmonitored:tr("Без мониторинга"), gap:tr("Нет измерений"), optional:tr("Недоступность допускается")};
 const colors = {up:'var(--up)', partial:'var(--partial)', down:'var(--down)', unknown:'var(--quiet)', stale:'var(--stale)', error:'var(--probe-error)', paused:'var(--quiet)', unmonitored:'var(--quiet)', gap:'var(--quiet)', optional:'var(--stale)'};
-const channelLabels = {wan:tr("Внешний (WAN)"), lan:tr("Локальная сеть (LAN)"), 'sites-vpn':tr("Площадки через VPN"),
-  openvpn:'VPN OpenVPN', 'wg-my':tr("VPN WireGuard · личные"), 'wg-work':tr("VPN WireGuard · рабочие"), internet:tr("Публичный интернет")};
+const channels = {
+  wan:{label:tr("Внешний (WAN)"),short:'WAN'}, lan:{label:tr("Локальная сеть (LAN)"),short:'LAN'},
+  'sites-vpn':{label:tr("Площадки через VPN"),short:'VPN'}, openvpn:{label:'VPN OpenVPN',short:'OVPN'},
+  'wg-my':{label:tr("VPN WireGuard · личные"),short:'WG'}, 'wg-work':{label:tr("VPN WireGuard · рабочие"),short:'WG'},
+  internet:{label:tr("Публичный интернет"),short:'INET'}
+};
+const channelLabels = Object.fromEntries(Object.entries(channels).map(([key,{label}])=>[key,label]));
 let state = null, graph = null, selected = null, renderedRevision = -1, editLayout = false, detailsOpen = false;
 let view = {x:-50, y:-50, w:1400, h:1000}, drag = null, saving = false, loading = false, online = false;
 let nodeElements = new Map(), edgeElements = new Map(), listElements = new Map(), toastTimer;
@@ -21,6 +26,8 @@ let movingWithKeyboard = false;
 const touchPointers = new Map();
 let pinch = null, blockMapClick = false;
 const svg = $('map');
+let diagramView = false;
+const mapViewKey = 'netmap-map-view';
 
 function elem(tag, attrs = {}, text = null) {
   const el = document.createElementNS(NS, tag);
@@ -88,83 +95,142 @@ function iconFor(kind) {
 }
 function viewChanged() { svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`); }
 function fit() {
-  if (!graph?.nodes.length) return;
+  if (!graph || (!graph.nodes.length && !(diagramView && graph.edges.length))) return;
   autoFit = true;
+  if (diagramView) {
+    view = diagramViewport(graph.nodes, graph.edges);
+    viewChanged();
+    return;
+  }
   const points = graph.nodes.map(n => [n.x,n.y]).concat(graph.edges.flatMap(e => e.points));
   const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
   const x = Math.min(...xs)-70, y = Math.min(...ys)-55;
   const w = Math.max(200, Math.max(...xs)-x+90), h = Math.max(150, Math.max(...ys)-y+70);
   view = {x,y,w,h}; viewChanged();
 }
-function edgePoints(edge, overrides = new Map()) {
+function diagramViewport(nodes, edges = [], {padding=24,minWidth=200,minHeight=150} = {}) {
+  let left=Infinity,top=Infinity,right=-Infinity,bottom=-Infinity;
+  const include=([x1,y1,x2=x1,y2=y1])=>{
+    left=Math.min(left,x1);top=Math.min(top,y1);right=Math.max(right,x2);bottom=Math.max(bottom,y2);
+  };
+  for (const node of nodes) include(diagramBounds(node));
+  for (const edge of edges) for (const point of edgeElements.get(edge.id).points) include(point);
+  const w=Math.max(minWidth,right-left+padding*2),h=Math.max(minHeight,bottom-top+padding*2);
+  return {x:(left+right-w)/2,y:(top+bottom-h)/2,w,h};
+}
+function renderMapView(useDiagram) {
+  diagramView = useDiagram;
+  $('view-classic').setAttribute('aria-pressed',String(!useDiagram));
+  $('view-diagram').setAttribute('aria-pressed',String(useDiagram));
+  svg.parentElement.classList.toggle('diagram',useDiagram);
+}
+function switchMapView(useDiagram) {
+  if (diagramView === useDiagram) return;
+  cancelMapGesture();
+  renderMapView(useDiagram);
+  try { localStorage.setItem(mapViewKey,useDiagram?'diagram':'classic'); } catch { /* Optional preference. */ }
+  drawGraph(); updateState();
+  if(typeof applyWatchIncident==='function')applyWatchIncident();
+}
+try { renderMapView(localStorage.getItem(mapViewKey) === 'diagram'); } catch { /* Use the classic view. */ }
+
+function edgePoints(edge, overrides = new Map(), from = graph.nodes.find(n=>n.id===edge.from_id), to = graph.nodes.find(n=>n.id===edge.to_id)) {
   if (edge.points.length >= 2) {
     const pts = edge.points.map(p => [...p]);
-    const from = overrides.get(edge.from_id), to = overrides.get(edge.to_id);
-    if(from&&to&&from.dx===to.dx&&from.dy===to.dy){
-      for(const point of pts){point[0]+=from.dx;point[1]+=from.dy;}
+    const fromMove = overrides.get(edge.from_id), toMove = overrides.get(edge.to_id);
+    if(fromMove&&toMove&&fromMove.dx===toMove.dx&&fromMove.dy===toMove.dy){
+      for(const point of pts){point[0]+=fromMove.dx;point[1]+=fromMove.dy;}
     }
-    for (const [id, index] of [[edge.from_id,0],[edge.to_id,pts.length-1]]) {
-      const node = graph.nodes.find(n => n.id === id);
+    for (const [node, index] of [[from,0],[to,pts.length-1]]) {
       if (node) {
-        const d = overrides.get(id) || {dx:0,dy:0};
+        const d = overrides.get(node.id) || {dx:0,dy:0};
         pts[index] = [node.x+d.dx,node.y+d.dy];
       }
     }
     return pts;
   }
-  return [edge.from_id,edge.to_id].map(id => {
-    const n = graph.nodes.find(n => n.id === id), d = overrides.get(id) || {dx:0,dy:0};
+  return [from,to].map(n => {
+    const d = overrides.get(n.id) || {dx:0,dy:0};
     return [n.x+d.dx,n.y+d.dy];
   });
 }
 function updateEdgeGeometry(edge, refs, overrides = new Map()) {
-  const pts = edgePoints(edge,overrides), path = pts.map((p,i) => `${i?'L':'M'}${p[0]} ${p[1]}`).join(' ');
+  const logical = edgePoints(edge,overrides,refs.from,refs.to);
+  const pts = diagramView ? diagramEdgePoints(logical,refs.from,refs.to) : logical;
+  const path = pts.map((p,i) => `${i?'L':'M'}${p[0]} ${p[1]}`).join(' ');
+  refs.points = pts;
   refs.path.setAttribute('d',path); refs.hit.setAttribute('d',path);
+  for (const [index, marker] of refs.markers) {
+    const [x,y] = pts.at(index);
+    marker.setAttribute('cx',x); marker.setAttribute('cy',y);
+  }
   const middle = pts[Math.floor((pts.length-1)/2)], end = pts[Math.ceil((pts.length-1)/2)];
   refs.label.setAttribute('x',(middle[0]+end[0])/2); refs.label.setAttribute('y',(middle[1]+end[1])/2-4);
+}
+function drawClassicNode(group, node) {
+  const box = elem('rect',{class:'node-box',x:-18,y:-18,width:36,height:36,rx:9});
+  const icon = elem('use',{class:'node-icon',href:`#icon-${iconFor(node.kind)}`,x:-11,y:-11,width:22,height:22});
+  const dot = elem('circle',{cx:15,cy:-15,r:4,stroke:'#fff','stroke-width':1.4});
+  const name = elem('text',{class:'node-name',y:30,'text-anchor':'middle'},node.name.length>24?node.name.slice(0,23)+'…':node.name);
+  const address = elem('text',{class:'node-address',y:41,'text-anchor':'middle'},node.addresses[0]||'');
+  const title = elem('title'); group.append(box,icon,dot,name,address,title);
+  return {content:group,icon,dot,title};
+}
+function drawClassicAddress(node, index) {
+  const columns=Math.min(8,node.addresses.length),column=index%8,row=Math.floor(index/8);
+  const point=elem('g',{class:'address-point',transform:`translate(${(column-(columns-1)/2)*8} ${49+row*8})`});
+  const hit=elem('rect',{x:-4,y:-4,width:8,height:8,fill:'transparent'});
+  const circle=elem('circle',{r:3,fill:colors.unknown,stroke:'#fff','stroke-width':.7});
+  point.append(hit,circle);
+  return {point,circle};
 }
 function drawGraph() {
   if (!graph) return;
   const first = renderedRevision < 0;
   $('node-layer').replaceChildren(); $('edge-layer').replaceChildren();
   nodeElements.clear(); edgeElements.clear();
+  const nodes = new Map(graph.nodes.map(node=>[node.id,node]));
   for (const edge of graph.edges) {
+    const from = nodes.get(edge.from_id) ?? null, to = nodes.get(edge.to_id) ?? null;
     const group = elem('g'), path = elem('path',{class:'edge-path',stroke:edge.color});
     const hit = elem('path',{class:'edge-hit',tabindex:'0',role:'button','aria-label':edge.label || tr("Изменить связь")});
     const label = elem('text',{class:'edge-label','text-anchor':'middle'},edge.label);
-    const title = elem('title',{},edge.label || `${graph.nodes.find(n=>n.id===edge.from_id)?.name || '?'} ↔ ${graph.nodes.find(n=>n.id===edge.to_id)?.name || '?'}`);
+    const title = elem('title',{},edge.label || `${from?.name || tr("Свободный конец")} ↔ ${to?.name || tr("Свободный конец")}`);
     hit.append(title); hit.addEventListener('click',()=>openEdge(edge.id));
     hit.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();openEdge(edge.id);}});
-    group.append(path,hit,label); $('edge-layer').append(group);
-    const refs = {path,hit,label}; edgeElements.set(edge.id,refs); updateEdgeGeometry(edge,refs);
+    group.append(path);
+    const markers = new Map();
+    if (diagramView && (!from || !to)) {
+      group.classList.add('edge-open');
+      for (const index of [0,-1]) {
+        if (index===0?from:to) continue;
+        const marker=elem('circle',{class:'edge-end',r:2.6,stroke:edge.color});
+        group.append(marker); markers.set(index,marker);
+      }
+    }
+    group.append(hit,label); $('edge-layer').append(group);
+    const refs = {from,to,path,hit,label,markers}; edgeElements.set(edge.id,refs); updateEdgeGeometry(edge,refs);
   }
   for (const node of graph.nodes) {
     const group = elem('g',{class:'map-node',transform:`translate(${node.x} ${node.y})`,tabindex:'0',role:'button','data-id':node.id});
     if(editLayout)group.setAttribute('aria-keyshortcuts',Object.keys(nodeMoveDirections).join(' '));
-    const box = elem('rect',{class:'node-box',x:-18,y:-18,width:36,height:36,rx:9});
-    const icon = elem('use',{class:'node-icon',href:`#icon-${iconFor(node.kind)}`,x:-11,y:-11,width:22,height:22});
-    const dot = elem('circle',{cx:15,cy:-15,r:4,stroke:'#fff','stroke-width':1.4});
-    const name = elem('text',{class:'node-name',y:30,'text-anchor':'middle'},node.name.length>24?node.name.slice(0,23)+'…':node.name);
-    const address = elem('text',{class:'node-address',y:41,'text-anchor':'middle'},node.addresses[0]||'');
-    const title = elem('title'); group.append(box,icon,dot,name,address,title);
+    const {content,icon,dot,title} = diagramView ? drawDiagramNode(group,node) : drawClassicNode(group,node);
     const endpoints = new Map();
     node.addresses.forEach((target,index)=>{
-      const columns=Math.min(8,node.addresses.length),column=index%8,row=Math.floor(index/8);
-      const point=elem('g',{class:'address-point',tabindex:'0',role:'button','data-target':target,transform:`translate(${(column-(columns-1)/2)*8} ${49+row*8})`});
-      const hit=elem('rect',{x:-4,y:-4,width:8,height:8,fill:'transparent'});
-      const circle=elem('circle',{r:3,fill:colors.unknown,stroke:'#fff','stroke-width':.7});
-      const pointTitle=elem('title',{},target);point.append(hit,circle,pointTitle);
+      const {point,circle} = diagramView ? drawDiagramAddress(node,target,index) : drawClassicAddress(node,index);
+      point.setAttribute('tabindex','0'); point.setAttribute('role','button'); point.setAttribute('data-target',target);
+      const pointTitle=elem('title',{},target);point.append(pointTitle);
       const activate=event=>{event.stopPropagation();selectNode(node.id);openHistory(node.id,target);};
       point.addEventListener('click',activate);
       point.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();activate(event);}});
-      group.append(point);endpoints.set(target,{point,circle,title:pointTitle});
+      content.append(point);endpoints.set(target,{point,circle,title:pointTitle});
     });
     group.addEventListener('click',event=>selectNode(node.id,editLayout&&(groupSelect||event.ctrlKey||event.metaKey||event.shiftKey)));
     group.addEventListener('keydown',event=>{if(event.target===group&&(event.key==='Enter'||event.key===' ')){event.preventDefault();selectNode(node.id,editLayout&&(groupSelect||event.ctrlKey||event.metaKey||event.shiftKey));}});
-    $('node-layer').append(group); nodeElements.set(node.id,{group,box,icon,dot,title,endpoints});
+    $('node-layer').append(group); nodeElements.set(node.id,{group,icon,dot,title,endpoints});
   }
   $('map-name').textContent = graph.name;
-  $('map-empty').hidden = graph.nodes.length > 0; renderedRevision = graph.revision;
+  $('map-empty').hidden = graph.nodes.length > 0 || (diagramView && graph.edges.length > 0); renderedRevision = graph.revision;
   if (first || autoFit) fit();
   if (selected && !graph.nodes.some(n=>n.id===selected)) selected = null;
   for(const id of layoutSelection)if(!nodeElements.has(id))layoutSelection.delete(id);
@@ -250,7 +316,8 @@ function updateState() {
   $('summary').replaceChildren(...counters.map(([cls,label,count])=>{const item=html('div',`summary-item ${cls}`);item.append(html('strong','',String(count)),document.createTextNode(label));return item;}));
   for (const node of graph.nodes) {
     const refs = nodeElements.get(node.id); if (!refs) continue;
-    const status = statusFor(node.id); refs.dot.setAttribute('fill',colors[status]);refs.icon.style.color = colors[status];
+    const status = statusFor(node.id); refs.dot.setAttribute('fill',colors[status]);
+    if (!diagramView) refs.icon.style.color = colors[status];
     refs.group.classList.toggle('allows-offline',!!node.allow_offline);
     refs.group.setAttribute('aria-label',`${node.name}: ${nodeStatusLabel(node)}`);
     refs.title.textContent = `${node.name}\n${nodeStatusLabel(node)}\n${node.addresses.join('\n')}`;
@@ -260,7 +327,9 @@ function updateState() {
       if(!online&&['up','partial','down'].includes(endpointStatus))endpointStatus='stale';
       endpoint.circle.setAttribute('fill',colors[displayStatus(node,endpointStatus)]);
       endpoint.point.setAttribute('aria-label',tr("{0}: {1}. Открыть историю", target, labels[endpointStatus]));
-      endpoint.title.textContent=tr("{0}\n{1}\n{2}{3}\nНажмите для истории", target, node.address_comments?.[target]||'', labels[endpointStatus], sample?.rtt_ms!=null?' · '+Number(sample.rtt_ms.toFixed(2))+tr(" мс"):'');
+      const comment=node.address_comments?.[target];
+      const metadata=diagramView?[channelLabels[node.address_channels?.[target]],comment].filter(Boolean).join(' · '):comment||'';
+      endpoint.title.textContent=tr("{0}\n{1}\n{2}{3}\nНажмите для истории", target, metadata, labels[endpointStatus], sample?.rtt_ms!=null?' · '+Number(sample.rtt_ms.toFixed(2))+tr(" мс"):'');
     }
   }
   drawList(); drawDetails(); updateEditorAddressStates();
@@ -554,7 +623,14 @@ $('password-relogin').addEventListener('click',()=>location.reload());
 $('add-node').addEventListener('click',()=>openNode());$('edit-node').addEventListener('click',()=>openNode(selected));$('add-edge').addEventListener('click',()=>openEdge());$('settings-button').addEventListener('click',openSettings);
 $('duplicate-node').addEventListener('click',()=>openNode(selected,true));
 $('close-details').addEventListener('click',()=>{selected=null;detailsOpen=false;drawList();drawDetails();});
-$('focus-node').addEventListener('click',()=>{const node=graph.nodes.find(n=>n.id===selected);if(node){autoFit=false;view={x:node.x-250,y:node.y-200,w:500,h:400};viewChanged();if(mobileLayout.matches){detailsOpen=false;drawDetails();}}});
+$('focus-node').addEventListener('click',()=>{
+  const node=graph.nodes.find(n=>n.id===selected);
+  if(!node)return;
+  autoFit=false;
+  view=diagramView?diagramViewport([node],[],{minWidth:260,minHeight:180}):{x:node.x-250,y:node.y-200,w:500,h:400};
+  viewChanged();
+  if(mobileLayout.matches){detailsOpen=false;drawDetails();}
+});
 $('toggle-list').addEventListener('click',()=>{
   const mobile=mobileLayout.matches;
   const open=mobile?$('sidebar').classList.toggle('open'):!$('sidebar').classList.toggle('collapsed');
@@ -563,6 +639,8 @@ $('toggle-list').addEventListener('click',()=>{
 });
 $('search').addEventListener('input',()=>drawList());$('filter').addEventListener('change',()=>drawList());
 $('fit').addEventListener('click',fit);
+$('view-classic').addEventListener('click',()=>switchMapView(false));
+$('view-diagram').addEventListener('click',()=>switchMapView(true));
 function zoom(factor,at={x:view.x+view.w/2,y:view.y+view.h/2}) {
   if(view.w*factor<80||view.w*factor>1e7)return;
   autoFit=false;
