@@ -95,7 +95,23 @@ function applyWatchIncident(){
   viewChanged();
   openHistory('',null,{nodes,since,until});
 }
-fetch('../watch/navigation.json',{signal:AbortSignal.timeout(8000),cache:'no-store'})
-  .then(response=>{if(!response.ok)throw new Error('index unavailable');return response.json();})
-  .then(data=>{watchNavigation=readWatchNavigation(data);applyWatchIncident();if(selected)drawWatchLinks(graph.nodes.find(node=>node.id===selected));})
-  .catch(()=>{watchNavigationError=true;if(watchQuery.has('canonical')){$('incident-context').hidden=false;$('incident-context').textContent=tr("Не удалось сопоставить объекты инцидента: индекс watch недоступен.");}if(selected)drawWatchLinks(graph.nodes.find(node=>node.id===selected));});
+let watchRequested=false;
+async function loadWatchNavigation(){
+  if(watchRequested)return;
+  watchRequested=true;
+  try{
+    const response=await fetch(state?.account?mapEndpoint('api/watch'):'../watch/navigation.json',
+      {signal:AbortSignal.timeout(8000),cache:'no-store'});
+    if(!response.ok)throw new Error('index unavailable');
+    watchNavigation=readWatchNavigation(await response.json());
+    applyWatchIncident();
+  }catch{
+    watchNavigationError=true;
+    if(watchQuery.has('canonical')){
+      $('incident-context').hidden=false;
+      $('incident-context').textContent=tr("Не удалось сопоставить объекты инцидента: индекс watch недоступен.");
+    }
+  }
+  const node=graph?.nodes.find(node=>node.id===selected);
+  if(node)drawWatchLinks(node);
+}

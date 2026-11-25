@@ -85,20 +85,32 @@ class Measurements:
 
 
 class ProbeStatistics:
-    def __init__(self, conn: sqlite3.Connection):
-        self.conn = conn
+    def __init__(self, conn: sqlite3.Connection, map_id):
+        self.conn, self.map_id = conn, map_id
         self.next_prune = 0
+
+    @staticmethod
+    def initialize(conn):
         conn.create_function("merge_rtt_histograms", 2, merge_histograms, deterministic=True)
-        conn.executescript("""
+        columns = {column[1] for column in conn.execute("PRAGMA table_info(probe_statistics)")}
+        legacy = columns and "map_id" not in columns
+        if legacy:
+            conn.execute("ALTER TABLE probe_statistics RENAME TO probe_statistics_legacy")
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS probe_statistics (
+                map_id INTEGER NOT NULL REFERENCES topology(id),
                 target TEXT NOT NULL, resolution INTEGER NOT NULL, bucket INTEGER NOT NULL,
                 sent INTEGER NOT NULL, received INTEGER NOT NULL, errors INTEGER NOT NULL,
                 minimum REAL, maximum REAL, total REAL NOT NULL, squares REAL NOT NULL,
                 histogram TEXT NOT NULL, first_at REAL NOT NULL, last_at REAL NOT NULL,
-                PRIMARY KEY (target, resolution, bucket)
-            ) WITHOUT ROWID;
-            CREATE INDEX IF NOT EXISTS probe_statistics_expiry ON probe_statistics(resolution, bucket);
+                PRIMARY KEY (map_id, target, resolution, bucket)
+            ) WITHOUT ROWID
         """)
+        if legacy:
+            conn.execute("INSERT INTO probe_statistics SELECT 1, * FROM probe_statistics_legacy")
+            conn.execute("DROP TABLE probe_statistics_legacy")
+        conn.execute("""CREATE INDEX IF NOT EXISTS probe_statistics_expiry
+                        ON probe_statistics(map_id, resolution, bucket)""")
 
     def record(self, target: str, status: str, ts: float, rtt: float | None):
         sent = int(status in ("up", "down"))
@@ -108,15 +120,15 @@ class ProbeStatistics:
         value = rtt or 0
         histogram = "{}" if rtt is None else '{"%d":1}' % round(math.log1p(value) * HISTOGRAM_SCALE)
         self.conn.executemany("""
-            INSERT INTO probe_statistics VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-            ON CONFLICT(target,resolution,bucket) DO UPDATE SET
+            INSERT INTO probe_statistics VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(map_id,target,resolution,bucket) DO UPDATE SET
                 sent=sent+excluded.sent, received=received+excluded.received, errors=errors+excluded.errors,
                 minimum=coalesce(min(minimum,excluded.minimum),minimum,excluded.minimum),
                 maximum=coalesce(max(maximum,excluded.maximum),maximum,excluded.maximum),
                 total=total+excluded.total, squares=squares+excluded.squares,
                 histogram=merge_rtt_histograms(histogram,excluded.histogram), last_at=excluded.last_at
             WHERE excluded.last_at > probe_statistics.last_at
-        """, ((target, step, int(ts // step) * step, sent, received, 1 - sent,
+        """, ((self.map_id, target, step, int(ts // step) * step, sent, received, 1 - sent,
                rtt, rtt, value, value * value, histogram, ts, ts) for step in RETENTION))
 
     def prune(self, now: float):
@@ -125,11 +137,11 @@ class ProbeStatistics:
         batch = 2000
         with self.conn:
             deleted = sum(self.conn.execute("""
-                DELETE FROM probe_statistics WHERE (target, resolution, bucket) IN (
+                DELETE FROM probe_statistics WHERE map_id=? AND (target, resolution, bucket) IN (
                     SELECT target, resolution, bucket FROM probe_statistics
-                    WHERE resolution=? AND bucket<? ORDER BY bucket LIMIT ?
+                    WHERE map_id=? AND resolution=? AND bucket<? ORDER BY bucket LIMIT ?
                 )
-            """, (step, int((now - keep) // step) * step, batch)).rowcount
+            """, (self.map_id, self.map_id, step, int((now - keep) // step) * step, batch)).rowcount
                           for step, keep in RETENTION.items())
         self.next_prune = now + (60 if deleted >= batch else HOUR)
 
@@ -139,9 +151,9 @@ class ProbeStatistics:
         buckets = {}
         if target:
             for row in self.conn.execute("""
-                SELECT * FROM probe_statistics WHERE target=? AND resolution=?
+                SELECT * FROM probe_statistics WHERE map_id=? AND target=? AND resolution=?
                 AND bucket>=? AND bucket<? AND last_at<=? ORDER BY bucket
-            """, (target, resolution, since, until, until)):
+            """, (self.map_id, target, resolution, since, until, until)):
                 histogram = {int(code): count for code, count in json.loads(row["histogram"]).items()}
                 bucket = row["bucket"] // step * step
                 points = buckets.setdefault(bucket, Measurements())

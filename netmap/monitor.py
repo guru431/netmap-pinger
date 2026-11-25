@@ -12,7 +12,7 @@ import socket
 import time
 
 from .model import Settings, address
-from .store import Store
+from .store import MapStore
 
 log = logging.getLogger(__name__)
 
@@ -107,10 +107,13 @@ def node_status(node, results: dict, now: float, stale_after: float) -> tuple[st
 
 
 class Monitor:
-    def __init__(self, store: Store, *, probe=ping, resolver=resolve_host,
-                 clock=time.time, monotonic=time.monotonic, netwatch_mail=False):
+    def __init__(self, store: MapStore, *, probe=ping, resolver=resolve_host,
+                 clock=time.time, monotonic=time.monotonic, netwatch_mail=False,
+                 probe_limit=None, dns_limit=None):
         self.store, self.probe, self.clock, self.monotonic = store, probe, clock, monotonic
         self.resolver = resolver
+        self.probe_limit = probe_limit if probe_limit is not None else asyncio.Semaphore(64)
+        self.dns_limit = dns_limit if dns_limit is not None else asyncio.Semaphore(5)
         self.netwatch_mail = netwatch_mail
         self.wake = asyncio.Event()
         self._interval = Settings().interval
@@ -138,7 +141,6 @@ class Monitor:
                          completed=0, targets=len(targets), last_error="")
         started = self.monotonic()
         pending = iter(targets)
-        dns_limit = asyncio.Semaphore(5)
         current_revision = graph.revision
         current_targets = set(targets)
         gap_after = self.stale_after(graph.settings)
@@ -150,15 +152,17 @@ class Monitor:
                     ipaddress.ip_address(target)
                 except ValueError:
                     # The LAN resolver is shared with other checks; bound DNS consumers separately.
-                    async with dns_limit:
+                    async with self.dns_limit:
                         resolved = await self.resolver(target, graph.settings.timeout)
                     if resolved is None:
                         status, rtt, detail = "error", None, "Не удалось разрешить DNS-имя"
                     else:
-                        status, rtt, detail = await self.probe(resolved, graph.settings.timeout)
+                        async with self.probe_limit:
+                            status, rtt, detail = await self.probe(resolved, graph.settings.timeout)
                         detail = f"DNS → {resolved}" + (f"; {detail}" if detail else "")
                 else:
-                    status, rtt, detail = await self.probe(target, graph.settings.timeout)
+                    async with self.probe_limit:
+                        status, rtt, detail = await self.probe(target, graph.settings.timeout)
                 # A topology edit may have removed the target while ping was in flight.
                 if self.store.revision() != current_revision:
                     current = self.store.graph()

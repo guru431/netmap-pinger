@@ -9,8 +9,10 @@ in the original Monitoring repository.
 - Keep one Uvicorn worker. The collector and optional mail worker run in the app lifespan.
 - Topology writes use optimistic revisions. Keep probe and history changes in one
   SQLite transaction. Use SQLite Backup API for live backups.
-- Bind direct runs to loopback. For shared use, terminate TLS and require operator
-  authentication at the reverse proxy. Keep the backend socket private.
+- Bind direct runs to loopback. For shared use, terminate TLS at the reverse proxy
+  and require app sessions (`NETMAP_ACCOUNTS=1`). Keep the backend socket private.
+- Keep authorization scopes on all map endpoints. The initial map opens for the
+  administrator by default. Personal maps are visible only to their owners.
 - Fast tests: `python -m pytest -q --durations=5` from the repository root.
 - Full Python tests: `python -m pytest -q -m "not manual" --timeout=300`.
 - Browser checks: `node tests/layout.browser.cjs` with Playwright installed.

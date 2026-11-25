@@ -10,33 +10,45 @@ INACTIVE = {"paused", "unmonitored"}
 
 
 class History:
-    def __init__(self, conn):
-        self.conn = conn
-        conn.executescript("""
+    def __init__(self, conn, map_id):
+        self.conn, self.map_id = conn, map_id
+
+    @staticmethod
+    def initialize(conn):
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS history (
                 id INTEGER PRIMARY KEY,
                 node_id TEXT NOT NULL, node_name TEXT NOT NULL, target TEXT NOT NULL,
                 status TEXT NOT NULL, started_at REAL NOT NULL, last_at REAL NOT NULL,
                 ended_at REAL, initial INTEGER NOT NULL DEFAULT 0, detail TEXT NOT NULL DEFAULT '',
+                map_id INTEGER NOT NULL DEFAULT 1,
                 CHECK(last_at >= started_at), CHECK(ended_at IS NULL OR ended_at >= started_at)
-            );
-            CREATE UNIQUE INDEX IF NOT EXISTS history_open ON history(node_id, target)
-                WHERE ended_at IS NULL;
-            CREATE INDEX IF NOT EXISTS history_node_time ON history(node_id, target, started_at);
-            CREATE INDEX IF NOT EXISTS history_time ON history(started_at, id);
-            CREATE INDEX IF NOT EXISTS history_end ON history(ended_at);
+            )
+        """)
+        if "map_id" not in {column[1] for column in conn.execute("PRAGMA table_info(history)")}:
+            conn.execute("ALTER TABLE history ADD COLUMN map_id INTEGER NOT NULL DEFAULT 1")
+            conn.execute("DROP INDEX IF EXISTS history_open")
+            conn.execute("DROP INDEX IF EXISTS history_node_time")
+            conn.execute("DROP INDEX IF EXISTS history_time")
+            conn.execute("DROP INDEX IF EXISTS history_end")
+        conn.execute("""CREATE UNIQUE INDEX IF NOT EXISTS history_open ON history(map_id, node_id, target)
+                        WHERE ended_at IS NULL""")
+        conn.execute("CREATE INDEX IF NOT EXISTS history_node_time ON history(map_id, node_id, target, started_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS history_time ON history(map_id, started_at, id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS history_end ON history(map_id, ended_at)")
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS history_detail (
                 history_id INTEGER NOT NULL REFERENCES history(id) ON DELETE CASCADE,
                 observed_at REAL NOT NULL, detail TEXT NOT NULL,
                 PRIMARY KEY (history_id, observed_at)
-            );
+            )
         """)
 
     def _insert(self, node_id, name, target, status, started, last, ended, initial, detail):
         self.conn.execute("""INSERT INTO history
-            (node_id,node_name,target,status,started_at,last_at,ended_at,initial,detail)
-            VALUES (?,?,?,?,?,?,?,?,?)""",
-                          (node_id, name, target, status, started, last, ended, int(initial), detail))
+            (map_id,node_id,node_name,target,status,started_at,last_at,ended_at,initial,detail)
+            VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                          (self.map_id, node_id, name, target, status, started, last, ended, int(initial), detail))
 
     def record(self, node_id: str, name: str, target: str, status: str, ts: float,
                gap_after: float, detail: str = ""):
@@ -44,8 +56,8 @@ class History:
         if status not in STATES or not math.isfinite(ts):
             raise ValueError("Invalid history state or timestamp")
         previous = self.conn.execute(
-            "SELECT * FROM history WHERE node_id=? AND target=? AND ended_at IS NULL",
-            (node_id, target),
+            "SELECT * FROM history WHERE map_id=? AND node_id=? AND target=? AND ended_at IS NULL",
+            (self.map_id, node_id, target),
         ).fetchone()
         if previous is not None and ts < previous["last_at"]:
             return  # A backwards clock must not produce negative/overlapping intervals.
@@ -76,7 +88,8 @@ class History:
     def topology_changed(self, graph, ts: float):
         """Pause/removal closes monitored intervals without erasing earlier observations."""
         nodes = {node.id: node for node in graph.nodes}
-        for row in self.conn.execute("SELECT * FROM history WHERE ended_at IS NULL").fetchall():
+        for row in self.conn.execute("SELECT * FROM history WHERE map_id=? AND ended_at IS NULL",
+                                     (self.map_id,)).fetchall():
             node = nodes.get(row["node_id"])
             if node is None or (row["target"] and row["target"] not in node.addresses):
                 status = "unmonitored"
@@ -88,7 +101,7 @@ class History:
                         status, ts, graph.settings.interval * 3)
 
     def since(self) -> float | None:
-        return self.conn.execute("SELECT MIN(started_at) FROM history").fetchone()[0]
+        return self.conn.execute("SELECT MIN(started_at) FROM history WHERE map_id=?", (self.map_id,)).fetchone()[0]
 
     @staticmethod
     def _cursor(value):
@@ -131,7 +144,7 @@ class History:
         rows = self.conn.execute("""
             WITH observations AS (
                 SELECT *, (ended_at IS NULL AND status NOT IN ('paused','unmonitored')
-                           AND last_at<?) AS interrupted FROM history
+                           AND last_at<?) AS interrupted FROM history WHERE map_id=?
             ), intervals AS (
                 SELECT id,node_id,node_name,target,status,started_at,last_at,
                        CASE WHEN interrupted THEN last_at ELSE ended_at END AS ended_at,
@@ -142,12 +155,13 @@ class History:
             )
             SELECT intervals.*, CASE WHEN interrupted THEN 'gap'
                     WHEN id > 0 AND ended_at IS NOT NULL THEN (
-                        SELECT h.status FROM history h WHERE h.node_id=intervals.node_id
+                        SELECT h.status FROM history h WHERE h.map_id=? AND h.node_id=intervals.node_id
                         AND h.target=intervals.target AND h.started_at=intervals.ended_at
                         AND h.id>intervals.id ORDER BY h.id LIMIT 1
                     ) END AS next_status
             FROM intervals WHERE """ + " AND ".join(where)
-            + " ORDER BY started_at DESC,id DESC LIMIT ?", [now - stale_after, now, *params, limit + 1],
+            + " ORDER BY started_at DESC,id DESC LIMIT ?",
+            [now - stale_after, self.map_id, now, self.map_id, *params, limit + 1],
         ).fetchall()
         items = []
         by_id = {}

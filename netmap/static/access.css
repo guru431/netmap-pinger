@@ -1,0 +1,16 @@
+.signed-out .topbar,.signed-out .workspace,.map-unavailable .map-toolbar,.map-unavailable .summary,
+.map-unavailable .sidebar,.map-unavailable .map-footer,.map-unavailable #toggle-list,
+.map-readonly [data-map-edit]{display:none}
+.account-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.account-bar strong{margin-right:auto;overflow-wrap:anywhere;min-width:0}
+.access-list{display:grid;gap:5px;margin-top:10px;max-height:35vh;overflow:auto;padding:3px}
+.access-row{display:flex;align-items:center;gap:8px;justify-content:space-between;border-bottom:1px solid var(--border);padding:7px 4px;min-width:0}
+.access-row span,.access-list button{overflow-wrap:anywhere;white-space:normal}
+.access-list button{min-height:36px;text-align:left}
+.access-row .text-button{flex-shrink:0}
+.access-list label.check{margin:0;font-size:calc(13px * var(--font-scale, 1));font-weight:400}
+.access-form{border-top:1px solid var(--border);margin-top:14px;padding-top:4px}
+.access-form .dialog-actions{margin-top:14px}
+.access-error{color:var(--error);overflow-wrap:anywhere}
+#no-maps{top:34%}
+#access-dialog{width:min(570px,calc(100% - 24px))}

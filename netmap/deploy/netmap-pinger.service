@@ -12,7 +12,7 @@ Group=netmap-pinger
 WorkingDirectory=/opt/netmap-pinger
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=NETMAP_HOSTS=netmap.example.org,localhost
-Environment=NETMAP_PASSWORD_FILE=/var/lib/netmap-pinger-auth/netmap.htpasswd
+Environment=NETMAP_ACCOUNTS=1
 EnvironmentFile=-/etc/netmap-pinger/netmap-pinger.env
 ExecStart=/opt/netmap-pinger/venv/bin/python -m netmap.app --db /var/lib/netmap-pinger/netmap.sqlite --fd 3
 Restart=on-failure
@@ -25,7 +25,7 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/var/lib/netmap-pinger /var/lib/netmap-pinger-auth
+ReadWritePaths=/var/lib/netmap-pinger
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 # ping uses unprivileged datagram ICMP sockets; deployment verifies ping_group_range for this group.
 CapabilityBoundingSet=

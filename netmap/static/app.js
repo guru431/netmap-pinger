@@ -45,15 +45,16 @@ function toast(message) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').hidden = true, 7000);
 }
 async function api(path, options = {}) {
-  const response = await fetch(path, {signal:AbortSignal.timeout(8000), ...options, headers:{'X-Netmap-Request':'1', ...options.headers}});
+  const response = await fetch(mapEndpoint(path), {signal:AbortSignal.timeout(8000), ...options, headers:{'X-Netmap-Request':'1', ...options.headers}});
   if (!response.ok) {
     let message = tr("Ошибка сервера ({0})", response.status);
     try { const data = await response.json(); message = typeof data.detail === 'string' ? serverMessage(data.detail) : tr("Проверьте адреса и значения полей"); } catch (_) { /* HTTP errors without JSON */ }
-    throw new Error(message);
+    throw Object.assign(new Error(message),{status:response.status});
   }
   return response.json();
 }
 async function change(mutator, revision = graph?.revision) {
+  if(!canEditMap())return false;
   if (saving || !graph || !online) { toast(tr("Дождитесь подключения и завершения сохранения")); return false; }
   if (revision !== graph.revision) { toast(tr("Карта изменилась. Закройте редактор и откройте его заново.")); return false; }
   const next = structuredClone(graph); mutator(next); saving = true;
@@ -231,7 +232,7 @@ function drawGraph() {
   for (const edge of graph.edges) {
     const from = nodes.get(edge.from_id) ?? null, to = nodes.get(edge.to_id) ?? null;
     const group = elem('g'), path = elem('path',{class:'edge-path',stroke:edge.color});
-    const hit = elem('path',{class:'edge-hit',tabindex:'0',role:'button','aria-label':edge.label || tr("Изменить связь")});
+    const hit = elem('path',{class:'edge-hit',tabindex:'0',role:'button','data-map-edit':'','aria-label':edge.label || tr("Изменить связь")});
     const label = elem('text',{class:'edge-label','text-anchor':'middle'},edge.label);
     const title = elem('title',{},edge.label || `${from?.name || tr("Свободный конец")} ↔ ${to?.name || tr("Свободный конец")}`);
     hit.append(title); hit.addEventListener('click',()=>openEdge(edge.id));
@@ -300,7 +301,7 @@ function drawDetails() {
   const node = graph?.nodes.find(n=>n.id===selected); $('details').hidden = !node || !detailsOpen;
   drawLayoutSelection();
   if (!node) return;
-  if(typeof drawWatchLinks==='function')drawWatchLinks(node);
+  if(!$('watch-section').hidden)drawWatchLinks(node);
   $('detail-name').textContent = node.name; $('detail-kind').textContent = [node.kind,node.site].filter(Boolean).join(' · ');
   $('detail-notes').textContent = node.notes.split(/\r?\n/).filter(line=>!node.addresses.includes(line.trim())).join('\n');
   const status = statusFor(node.id); $('detail-status').textContent = labels[rawStatusFor(node.id)]; $('detail-status').style.color = colors[status];
@@ -324,7 +325,7 @@ function drawDetails() {
       statisticsButton.addEventListener('click',()=>openStatistics(node.id,target));
       const actions=html('div','address-actions');
       for(const [kind,label] of [['ping','Ping'],['trace',tr("Трассировка")]]){
-        const button=html('button','',label);button.setAttribute('aria-label',`${label}: ${target}`);
+        const button=html('button','',label);button.setAttribute('aria-label',`${label}: ${target}`);button.dataset.mapEdit='';
         button.addEventListener('click',()=>runDiagnostic(node,target,kind));actions.append(button);
       }
       actions.append(historyButton,statisticsButton);row.append(dot,body,actions);addressElements.set(target,{dot,statusText});return row;
@@ -412,8 +413,10 @@ async function refresh() {
   loading=true;
   try {
     const data=await api('api/state');
-    if(saving||(graph&&data.graph.revision<graph.revision))return;
+    if(saving||(graph&&data.graph&&data.graph.revision<graph.revision))return;
     state=data;online=true;
+    applyAccountState(data);
+    if(!data.graph)return;
     if (!drag&&!touchPointers.size) {graph=data.graph;if(graph.revision!==renderedRevision)drawGraph();}
     const info=data.monitor, age=info.last_completed?Math.max(0,Math.round(data.server_time-info.last_completed)):null;
     const stale=age!==null&&age>data.stale_after;
@@ -421,13 +424,16 @@ async function refresh() {
     $('connection').textContent=serverMessage(info.last_error) || (!info.running?tr("Сборщик остановлен"):
       tr("{0} · {1}/{2} адресов · период {3} с{4}", info.last_completed?tr("Последний цикл: {0} с назад · {1} с", age, info.duration.toFixed(1)):tr("Первый опрос"), info.completed, info.targets, data.graph.settings.interval, stale?tr(" · данные устарели"):''));
     updateState();
-    if(typeof applyWatchIncident==='function')applyWatchIncident();
-  } catch(error) {online=false;$('connection').classList.add('error');$('connection').textContent=tr("Нет связи с сервером. Статусы не обновляются.");updateState();}
+    if(!$('watch-section').hidden){loadWatchNavigation();applyWatchIncident();}
+  } catch(error) {
+    if(handleSessionError(error))return;
+    online=false;$('connection').classList.add('error');$('connection').textContent=tr("Нет связи с сервером. Статусы не обновляются.");updateState();
+  }
   finally {loading=false;}
 }
 async function refreshLoop() {
   if(passwordChanged)return;
-  await refresh();
+  if(!$('login-dialog').open)await refresh();
   if(!passwordChanged)setTimeout(refreshLoop,2000);
 }
 
@@ -491,7 +497,7 @@ function addAddress(target='',comment='',channel='') {
   return input;
 }
 function openNode(id=null, duplicate=false) {
-  if(!graph)return;
+  if(!graph||!canEditMap())return;
   const node=graph.nodes.find(n=>n.id===id);if(duplicate&&!node)return;
   const dialog=$('node-dialog');dialog.dataset.id=duplicate?'':id||'';dialog.dataset.revision=graph.revision;
   dialog.dataset.templateId=duplicate?node.id:'';
@@ -512,7 +518,7 @@ function updateNetwatchControl() {
   $('node-netwatch').disabled=!$('node-enabled').checked||$('node-allow-offline').checked;
 }
 function openEdge(id=null) {
-  if(!graph)return;
+  if(!graph||!canEditMap())return;
   const dialog=$('edge-dialog'),edge=graph.edges.find(e=>e.id===id);dialog.dataset.id=id||'';dialog.dataset.revision=graph.revision;
   const nodes=[...graph.nodes].sort((a,b)=>a.name.localeCompare(b.name,uiLocale,{sensitivity:'base',numeric:true}));
   for(const select of [$('edge-from'),$('edge-to')]) {
@@ -532,9 +538,10 @@ function showSettingsSection(section) {
 }
 function openSettings() {
   const dialog=$('settings-dialog');
-  $('settings-map-tab').disabled=!graph;
-  showSettingsSection(graph ? 'map' : 'appearance');
-  if(!graph){dialog.showModal();return;}
+  const edit=!!graph&&canEditMap();
+  $('settings-map-tab').disabled=!edit;
+  showSettingsSection(edit ? 'map' : 'appearance');
+  if(!edit){dialog.showModal();return;}
   dialog.dataset.revision=graph.revision;
   $('settings-name').value=graph.name;$('settings-interval').value=graph.settings.interval;$('settings-timeout').value=graph.settings.timeout;
   $('settings-netwatch-recipient').value=graph.settings.netwatch_recipient;
@@ -546,6 +553,7 @@ function stopDiagnostic() {
   if(diagnosticController){diagnosticController.abort();$('diagnostic-status').textContent=tr("Остановлено");}
 }
 async function runDiagnostic(node,target,kind) {
+  if(!canEditMap())return;
   stopDiagnostic();
   const controller=new AbortController();diagnosticController=controller;
   const dialog=$('diagnostic-dialog'),output=$('diagnostic-output');
@@ -556,7 +564,7 @@ async function runDiagnostic(node,target,kind) {
   const timer=setTimeout(()=>{controller.abort();if(diagnosticController===controller)$('diagnostic-status').textContent=tr("Превышено время ожидания ответа сервера");},55000);
   let reader;
   try{
-    const response=await fetch('api/diagnostics',{method:'POST',headers:{'X-Netmap-Request':'1','Content-Type':'application/json'},
+    const response=await fetch(mapEndpoint('api/diagnostics'),{method:'POST',headers:{'X-Netmap-Request':'1','Content-Type':'application/json'},
       body:JSON.stringify({node_id:node.id,target,command:kind}),signal:controller.signal});
     if(!response.ok){let data;try{data=await response.json();}catch{}throw new Error(typeof data?.detail==='string'?serverMessage(data.detail):tr("Не удалось запустить команду (HTTP {0})", response.status));}
     reader=response.body.getReader();const decoder=new TextDecoder();let pending='',finished=false;
@@ -647,7 +655,11 @@ $('settings-map-tab').addEventListener('click',()=>showSettingsSection('map'));
 $('settings-appearance-tab').addEventListener('click',()=>showSettingsSection('appearance'));
 const passwordDialog=$('password-dialog'),passwordForm=$('password-form');
 const passwordSubmit=$('password-submit'),passwordCancel=$('password-cancel'),passwordError=$('password-error');
-$('password-button').addEventListener('click',()=>passwordDialog.showModal());
+function openPasswordDialog(){
+  $('password-username').value=state?.account?.username||'admin';
+  passwordDialog.showModal();
+}
+$('password-button').addEventListener('click',openPasswordDialog);
 passwordDialog.addEventListener('cancel',event=>{
   if(passwordSubmit.disabled||passwordChanged)event.preventDefault();
 });
@@ -667,7 +679,7 @@ passwordForm.addEventListener('submit',async event=>{
   passwordError.hidden=true;
   passwordSubmit.disabled=passwordCancel.disabled=true;
   try{
-    await api('api/password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({current,replacement})});
+    await api(state?.account?'api/account/password':'api/password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({current,replacement})});
     passwordChanged=true;
     passwordForm.reset();
     passwordForm.hidden=true;
@@ -725,6 +737,7 @@ $('zoom-in').addEventListener('click',()=>zoom(.8));$('zoom-out').addEventListen
 function world(event) {const point=svg.createSVGPoint();point.x=event.clientX;point.y=event.clientY;return point.matrixTransform(svg.getScreenCTM().inverse());}
 svg.addEventListener('wheel',event=>{event.preventDefault();zoom(event.deltaY>0?1.12:1/1.12,world(event));},{passive:false});
 $('edit-layout').addEventListener('click',()=>{
+  if(!editLayout&&!canEditMap())return;
   cancelMapGesture();
   editLayout=!editLayout;$('edit-layout').setAttribute('aria-pressed',String(editLayout));svg.classList.toggle('editing',editLayout);
   groupSelect=false;$('group-select').hidden=!editLayout;$('group-select').setAttribute('aria-pressed','false');
@@ -994,4 +1007,4 @@ new ResizeObserver(()=>{if(autoFit&&!drag&&!touchPointers.size)fit();}).observe(
 const mobileLayout=matchMedia('(max-width:850px)');
 function updateListToggle(){ $('toggle-list').setAttribute('aria-expanded',String(mobileLayout.matches?$('sidebar').classList.contains('open'):!$('sidebar').classList.contains('collapsed'))); }
 mobileLayout.addEventListener('change',updateListToggle);updateListToggle();
-viewChanged();refreshLoop();
+viewChanged();

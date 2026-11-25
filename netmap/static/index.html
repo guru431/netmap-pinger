@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="static/compact.css">
   <link rel="stylesheet" href="static/appearance.css">
   <link rel="stylesheet" href="static/diagram.css">
+  <link rel="stylesheet" href="static/access.css">
   <script src="static/en.js" defer></script>
   <script src="static/i18n.js" defer></script>
   <script src="static/diagram.js" defer></script>
@@ -22,6 +23,7 @@
   <script src="static/history.js" defer></script>
   <script src="static/statistics.js" defer></script>
   <script src="static/navigation.js" defer></script>
+  <script src="static/access.js" defer></script>
 </head>
 <body>
   <svg class="symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
@@ -90,16 +92,16 @@
       <div class="map-views" role="group" aria-label="Вид карты" data-i18n-attrs="aria-label"><button id="view-classic" aria-pressed="true" data-i18n>Карта</button><button id="view-diagram" aria-pressed="false" data-i18n>Схема</button></div>
       <div><button id="fit" title="Показать всю карту" data-i18n-attrs="title" data-i18n>Вся карта</button><button id="zoom-in" aria-label="Приблизить" data-i18n-attrs="aria-label">+</button><button id="zoom-out" aria-label="Отдалить" data-i18n-attrs="aria-label">−</button></div>
       <div><button id="edit-layout" aria-pressed="false" title="Ctrl/⌘ или Shift + клик — выбрать несколько узлов; Shift + рамка — выделить группу. Стрелки — шаг 1, Shift + стрелки — шаг 10. Положение сохраняется автоматически." data-i18n-attrs="title" data-i18n>Двигать узлы</button><button id="group-select" aria-pressed="false" title="Выбирайте узлы нажатием или обведите рамкой; потяните выделенный узел для переноса группы. Работает и на сенсорном экране." hidden data-i18n-attrs="title" data-i18n>Выделить группу</button></div>
-      <div role="group" aria-label="Добавить на карту" data-i18n-attrs="aria-label"><button id="add-node" class="primary" data-i18n>+ Узел</button><button id="add-edge" data-i18n>+ Связь</button></div>
+      <div role="group" aria-label="Добавить на карту" data-i18n-attrs="aria-label" data-map-edit><button id="add-node" class="primary" data-i18n>+ Узел</button><button id="add-edge" data-i18n>+ Связь</button></div>
     </nav>
     <div class="summary" id="summary" aria-label="Состояние сети" data-i18n-attrs="aria-label"></div>
-    <div class="top-actions"><button id="toggle-list" aria-expanded="true" aria-controls="sidebar" data-i18n>Узлы</button><button id="settings-button" data-i18n>Настройки</button></div>
+    <div class="top-actions"><button id="maps-button" hidden data-i18n>Карты</button><button id="toggle-list" aria-expanded="true" aria-controls="sidebar" data-i18n>Узлы</button><button id="settings-button" data-i18n>Настройки</button></div>
   </header>
   <main class="workspace">
     <aside class="sidebar" id="sidebar" aria-label="Список узлов" data-i18n-attrs="aria-label">
       <div class="sidebar-head"><label for="search" data-i18n>Найти узел</label><input id="search" type="search" placeholder="Имя или любой IP…" autocomplete="off" data-i18n-attrs="placeholder"><select id="filter" aria-label="Фильтр статуса" data-i18n-attrs="aria-label"><option value="all" data-i18n>Все состояния</option><option value="problem" data-i18n>Требуют внимания</option><option value="optional" data-i18n>Непостоянные узлы</option><option value="up" data-i18n>Доступны</option><option value="partial" data-i18n>Частично доступны</option><option value="down" data-i18n>Недоступны</option><option value="stale" data-i18n>Данные устарели</option><option value="paused" data-i18n>Приостановлены</option></select><p id="list-count" class="muted"></p></div>
       <div class="node-list" id="node-list"></div>
-      <footer class="sidebar-footer"><a href="api/export" download data-i18n>Скачать карту</a><button id="import-button" class="text-button" data-i18n>Загрузить копию</button><input id="import-file" type="file" accept="application/json,.json" hidden></footer>
+      <footer class="sidebar-footer"><a id="map-export" href="api/export" download data-i18n>Скачать карту</a><button id="import-button" class="text-button" data-i18n>Загрузить копию</button><input id="import-file" type="file" accept="application/json,.json" hidden></footer>
     </aside>
     <section class="map-panel" aria-label="Карта сети" data-i18n-attrs="aria-label">
       <div id="diagram-tools" class="diagram-tools" hidden>
@@ -110,6 +112,10 @@
       <svg id="map" xmlns="http://www.w3.org/2000/svg" aria-label="Узлы и связи сети" role="group" data-i18n-attrs="aria-label"><g id="site-layer"></g><g id="edge-layer"></g><g id="node-layer"></g></svg>
       <p id="layout-help" class="layout-help" role="status" hidden></p>
       <div class="map-empty" id="map-empty" hidden data-i18n>Добавьте узел или загрузите сохранённую карту.</div>
+      <div class="map-empty" id="no-maps" hidden>
+        <p data-i18n>У вас пока нет доступных карт.</p>
+        <button id="first-map" class="primary" data-i18n>Создать личную карту</button>
+      </div>
       <p id="incident-context" class="incident-context" role="status" hidden></p>
       <div class="map-footer"><span class="connection-bar" id="connection" role="status" data-i18n>Подключение к мониторингу…</span><span class="status-legend"><i class="dot up"></i> <span data-i18n>Доступен</span> <i class="dot partial"></i> <span data-i18n>Частично</span> <i class="dot down"></i> <span data-i18n>Недоступен</span> <i class="dot stale" title="Нет свежих данных, мониторинг приостановлен или недоступность узла допускается" data-i18n-attrs="title"></i> <span data-i18n>Нет данных / допустимо</span></span><div><button id="statistics-button" class="text-button" data-i18n>Статистика</button><button id="history-button" class="text-button" data-i18n>История обрывов</button><button id="poll-now" class="text-button" data-i18n>Опросить сейчас</button></div></div>
     </section>
@@ -119,7 +125,7 @@
       <div class="detail-actions"><button id="edit-node" data-i18n>Изменить</button><button id="duplicate-node" data-i18n>Дублировать</button><button id="focus-node" data-i18n>На карте</button><button id="node-statistics" data-i18n>Статистика</button><button id="node-history" data-i18n>История</button></div>
       <h2><span data-i18n>Адреса и имена</span> <span id="address-count" class="muted"></span></h2><div id="address-results"></div>
       <h2 data-i18n>Связи</h2><div id="node-edges"></div><p class="muted explanation" data-i18n>Линии показывают топологию. Ping проверяет доступность узлов с сервера мониторинга.</p>
-      <h2 data-i18n>Эпизоды watch</h2><div id="watch-links"></div>
+      <section id="watch-section"><h2 data-i18n>Эпизоды watch</h2><div id="watch-links"></div></section>
     </aside>
   </main>
   <div id="toast" role="alert" hidden></div>
@@ -174,8 +180,8 @@
     <label class="check"><input id="node-enabled" type="checkbox" checked> <span data-i18n>Мониторить этот узел</span></label>
     <label class="check"><input id="node-allow-offline" type="checkbox"> <span data-i18n>Допускается недоступность</span></label>
     <p class="muted" data-i18n>Для планово выключаемых и переносимых устройств: при недоступности узел серый. Опрос и история сохраняются.</p>
-    <label class="check"><input id="node-netwatch" type="checkbox" checked aria-describedby="node-netwatch-help"> Netwatch</label>
-    <p id="node-netwatch-help" class="muted" data-i18n>Письма об обрыве и восстановлении для опрашиваемых узлов с обязательной доступностью. Адрес и задержка задаются в настройках карты.</p>
+    <div data-netwatch-settings><label class="check"><input id="node-netwatch" type="checkbox" checked aria-describedby="node-netwatch-help"> Netwatch</label>
+    <p id="node-netwatch-help" class="muted" data-i18n>Письма об обрыве и восстановлении для опрашиваемых узлов с обязательной доступностью. Адрес и задержка задаются в настройках карты.</p></div>
     <div class="dialog-actions"><button type="button" id="delete-node" class="danger" data-i18n>Удалить узел</button><button type="button" data-close data-i18n>Отмена</button><button type="submit" class="primary" data-i18n>Сохранить</button></div>
   </form></dialog>
   <dialog id="edge-dialog"><form id="edge-form"><div class="dialog-title"><h2 data-i18n>Связь узлов</h2><button type="button" data-close aria-label="Закрыть" data-i18n-attrs="aria-label">×</button></div><label for="edge-from" data-i18n>От узла</label><select id="edge-from"></select><label for="edge-to" data-i18n>К узлу</label><select id="edge-to"></select><label for="edge-label" data-i18n>Подпись</label><input id="edge-label" maxlength="500"><label for="edge-color" data-i18n>Цвет линии</label><input id="edge-color" type="color" value="#7894a5"><div class="dialog-actions"><button type="button" id="delete-edge" class="danger" data-i18n>Удалить связь</button><button type="button" data-close data-i18n>Отмена</button><button type="submit" class="primary" data-i18n>Сохранить</button></div></form></dialog>
@@ -220,9 +226,9 @@
       <label for="settings-interval" data-i18n>Период опроса, секунд</label><input id="settings-interval" type="number" min="5" max="3600" step="1" required>
       <label for="settings-timeout" data-i18n>Тайм-аут одного ping, секунд</label><input id="settings-timeout" type="number" min="0.2" max="30" step="0.1" required>
       <p class="muted" data-i18n>Мониторинг работает постоянно, даже когда браузер закрыт. При большом количестве адресов цикл может длиться дольше заданного периода.</p>
-      <h3>Netwatch</h3>
+      <div data-netwatch-settings><h3>Netwatch</h3>
       <label for="settings-netwatch-recipient" data-i18n>Почта для уведомлений</label><input id="settings-netwatch-recipient" type="email" maxlength="254">
-      <label for="settings-netwatch-minutes" data-i18n>Задержка уведомления об обрыве, минут</label><input id="settings-netwatch-minutes" type="number" min="1" step="1" required>
+      <label for="settings-netwatch-minutes" data-i18n>Задержка уведомления об обрыве, минут</label><input id="settings-netwatch-minutes" type="number" min="1" step="1" required></div>
       <p><button type="button" id="password-button" hidden data-i18n>Сменить пароль</button></p>
       <p id="settings-source" class="muted"></p><div id="import-notes" class="muted"></div>
       <div class="dialog-actions"><button type="button" data-close data-i18n>Отмена</button><button type="submit" class="primary" data-i18n>Сохранить</button></div>
@@ -231,7 +237,7 @@
   <dialog id="password-dialog" aria-labelledby="password-title">
     <div class="dialog-title"><h2 id="password-title" data-i18n>Смена пароля</h2></div>
     <form id="password-form" method="post">
-      <input type="hidden" autocomplete="username" value="admin">
+      <input type="hidden" id="password-username" autocomplete="username" value="admin">
       <label for="password-current" data-i18n>Текущий пароль</label>
       <input id="password-current" type="password" autocomplete="current-password" maxlength="72" required autofocus>
       <label for="password-new" data-i18n>Новый пароль</label>
@@ -244,6 +250,67 @@
     </form>
     <p id="password-result" role="status" hidden data-i18n>Пароль изменён. Войдите с новым паролем.</p>
     <button id="password-relogin" type="button" class="primary" hidden data-i18n>Войти снова</button>
+  </dialog>
+  <dialog id="login-dialog" aria-labelledby="login-title">
+    <div class="dialog-title"><h2 id="login-title" data-i18n>Вход в Netmap Pinger</h2></div>
+    <form id="login-form" method="post">
+      <label for="login-username" data-i18n>Логин</label><input id="login-username" autocomplete="username" required maxlength="64" autofocus>
+      <label for="login-password" data-i18n>Пароль</label><input id="login-password" type="password" autocomplete="current-password" required maxlength="72">
+      <p id="login-error" class="access-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button type="submit" class="primary" data-i18n>Войти</button></div>
+    </form>
+  </dialog>
+  <dialog id="maps-dialog" aria-labelledby="maps-title">
+    <div class="dialog-title"><h2 id="maps-title" data-i18n>Карты</h2><button type="button" data-close aria-label="Закрыть" data-i18n-attrs="aria-label">×</button></div>
+    <div class="account-bar">
+      <strong id="account-username"></strong>
+      <button type="button" id="account-password" class="text-button" data-i18n>Сменить пароль</button>
+      <button type="button" id="logout-button" class="text-button" data-i18n>Выйти</button>
+    </div>
+    <div id="available-maps" class="access-list"></div>
+    <p id="maps-error" class="access-error" role="alert" hidden></p>
+    <form id="create-map-form" class="access-form">
+      <label for="new-map-name" data-i18n>Название новой карты</label><input id="new-map-name" maxlength="200" required>
+      <div id="new-map-type-field" hidden><label for="new-map-type" data-i18n>Тип карты</label><select id="new-map-type"><option value="personal" data-i18n>Личная карта</option><option value="shared" data-i18n>Общая карта</option></select></div>
+      <div class="dialog-actions"><button type="button" id="access-button" hidden data-i18n>Управление доступом</button><button type="submit" class="primary" data-i18n>Создать карту</button></div>
+    </form>
+  </dialog>
+  <dialog id="access-dialog" aria-labelledby="access-title">
+    <div class="dialog-title"><h2 id="access-title" data-i18n>Управление доступом</h2><button type="button" data-close aria-label="Закрыть" data-i18n-attrs="aria-label">×</button></div>
+    <div id="access-tabs" class="settings-sections" role="group" aria-label="Разделы управления доступом" data-i18n-attrs="aria-label">
+      <button type="button" data-access-tab="users" aria-controls="access-users" aria-pressed="true" data-i18n>Пользователи</button>
+      <button type="button" data-access-tab="groups" aria-controls="access-groups" aria-pressed="false" data-i18n>Группы</button>
+      <button type="button" data-access-tab="grants" aria-controls="access-grants" aria-pressed="false" data-i18n>Доступ к картам</button>
+    </div>
+    <p id="access-error" class="access-error" role="alert" hidden></p>
+    <p id="access-status" class="muted" role="status" hidden></p>
+    <section id="access-users">
+      <div id="account-list" class="access-list"></div>
+      <form id="create-user-form" class="access-form">
+        <label for="new-user-name" data-i18n>Логин</label><input id="new-user-name" autocomplete="off" required maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}">
+        <p class="muted" data-i18n>Латинские буквы, цифры, точка, дефис и подчёркивание.</p>
+        <label for="new-user-password" data-i18n>Начальный пароль</label><input id="new-user-password" type="password" autocomplete="new-password" required minlength="12" maxlength="72">
+        <p class="muted" data-i18n>Не менее 12 символов и не более 72 байт.</p>
+        <div class="dialog-actions"><button type="submit" class="primary" data-i18n>Создать аккаунт</button></div>
+      </form>
+    </section>
+    <section id="access-groups" hidden>
+      <label for="group-picker" data-i18n>Группа</label><select id="group-picker"></select>
+      <div id="group-members" class="access-list"></div>
+      <form id="create-group-form" class="access-form">
+        <label for="new-group-name" data-i18n>Название новой группы</label><input id="new-group-name" maxlength="200" required>
+        <div class="dialog-actions"><button type="submit" class="primary" data-i18n>Создать группу</button></div>
+      </form>
+    </section>
+    <section id="access-grants" hidden>
+      <label for="grant-map" data-i18n>Общая карта</label><select id="grant-map"></select>
+      <div id="grant-list" class="access-list"></div>
+      <form id="grant-form" class="access-form">
+        <label for="grant-principal" data-i18n>Пользователь или группа</label><select id="grant-principal" required></select>
+        <label for="grant-level" data-i18n>Уровень доступа</label><select id="grant-level"><option value="view" data-i18n>Просмотр</option><option value="edit" data-i18n>Редактирование</option></select>
+        <div class="dialog-actions"><button type="submit" class="primary" data-i18n>Сохранить доступ</button></div>
+      </form>
+    </section>
   </dialog>
   <dialog id="import-dialog" aria-labelledby="import-title">
     <form id="import-form">
