@@ -37,113 +37,158 @@ function diagramLabelSizes(node, fontScale, measure) {
     bounds:[-width/2,-diagramIcon.height/2-4,width/2,diagramLabelY+nameHeight+rows.length*rowHeight+2]};
 }
 
-function closestFreeDiagramCoordinate(position, bounds, placed, axis) {
-  const other = 1-axis, intervals = [];
-  for (const box of placed) {
-    if (position[other]+bounds[other+2]+diagramSpacing<=box[other] ||
-        position[other]+bounds[other]>=box[other+2]+diagramSpacing) continue;
-    intervals.push([box[axis]-bounds[axis+2]-diagramSpacing,box[axis+2]-bounds[axis]+diagramSpacing]);
-  }
-  const target = position[axis];
-  if (!intervals.some(([start,end])=>start<target&&target<end)) return target;
-
-  // Merge blocked intervals until the full occupied span containing the target is known.
-  intervals.sort(([a],[b])=>a-b);
-  let left = -Infinity, right = -Infinity;
-  for (const [start,end] of intervals) {
-    if (start<right) right=Math.max(right,end);
-    else {
-      if (left<target&&target<right) break;
-      left=start; right=end;
-    }
-  }
-  return right-target<=target-left ? right : left;
-}
-
 function diagramMeasure(fontFamily, fontScale) {
   const text = document.createElement('canvas').getContext('2d');
   const width = font => value => { text.font = font; return text.measureText(value).width; };
   return {name:width(`650 ${12*fontScale}px ${fontFamily}`),
     address:width(`${10.5*fontScale}px ui-monospace, Consolas, monospace`),
-    channel:width(`650 ${8*fontScale}px ${fontFamily}`)};
+    channel:width(`650 ${8*fontScale}px ${fontFamily}`),
+    caption:(value,scale)=>width(`750 ${19*fontScale*scale}px ${fontFamily}`)(value)};
 }
 
-function layoutDiagram(nodes, viewport, grouped) {
-  const style = getComputedStyle(viewport);
-  const fontScale = Number(style.getPropertyValue('--font-scale')) || 1;
-  const entries = nodes.map(node=>({node,labels:diagramLabelSizes(node,fontScale,diagramMeasure(style.fontFamily,fontScale))}));
-  if (grouped) return layoutDiagramSites(entries,fontScale);
+const diagramByText = (a, b) => a < b ? -1 : a > b ? 1 : 0;
+const diagramMean = values => values.reduce((sum, value) => sum + value, 0) / values.length;
 
-  const positions = new Map(), placed = [];
-  for (const {node,labels} of entries) {
-    const {x,y} = node;
-    const bounds = labels.bounds;
-    let anchor = [closestFreeDiagramCoordinate([x,y],bounds,placed,0),y];
-    let distance = Math.abs(anchor[0]-x);
-    if (distance) {
-      // Also try moving up/down and fitting in the nearest rows to avoid one long chain.
-      const rowStep = bounds[3]-bounds[1]+diagramSpacing;
-      const vertical = [x,closestFreeDiagramCoordinate([x,y],bounds,placed,1)];
-      const rows = [y-rowStep,y+rowStep].map(row=>[closestFreeDiagramCoordinate([x,row],bounds,placed,0),row]);
-      for (const candidate of [vertical,...rows]) {
-        const shift = Math.hypot(candidate[0]-x,candidate[1]-y);
-        if (shift<distance) { anchor=candidate; distance=shift; }
+// Spring embedder in the spirit of Fruchterman–Reingold. Items carry x, y (start and result),
+// links are [index, index, weight]. No randomness: equal input always gives equal output.
+function relaxDiagram(items, links, k, aspect, iterations) {
+  if (items.length < 2) return;
+  const gx = 2/Math.sqrt(aspect), gy = 2*Math.sqrt(aspect);
+  const cx = diagramMean(items.map(item=>item.x)), cy = diagramMean(items.map(item=>item.y));
+  for (let step=0; step<iterations; step++) {
+    const temperature = k*1.5*(1-step/iterations)+1;
+    const moves = items.map(item=>[-(item.x-cx)*gx,-(item.y-cy)*gy]);
+    for (let i=0; i<items.length; i++) {
+      for (let j=i+1; j<items.length; j++) {
+        let dx = items[i].x-items[j].x, dy = items[i].y-items[j].y;
+        if (Math.abs(dx)+Math.abs(dy) < .01) { dx = Math.cos(i+j); dy = Math.sin(i+j); }
+        const distance2 = dx*dx+dy*dy, force = k*k/distance2;
+        moves[i][0]+=dx*force; moves[i][1]+=dy*force;
+        moves[j][0]-=dx*force; moves[j][1]-=dy*force;
       }
     }
-    const position = diagramPosition(labels,...anchor);
-    placed.push(position.bounds);
-    positions.set(node.id,position);
+    for (const [i,j,weight] of links) {
+      const dx = items[i].x-items[j].x, dy = items[i].y-items[j].y;
+      const distance = Math.hypot(dx,dy) || 1, force = weight*distance/k;
+      moves[i][0]-=dx*force; moves[i][1]-=dy*force;
+      moves[j][0]+=dx*force; moves[j][1]+=dy*force;
+    }
+    items.forEach((item,index)=>{
+      const [mx,my] = moves[index], length = Math.hypot(mx,my);
+      if (!length) return;
+      const scale = Math.min(length,temperature)/length;
+      item.x += mx*scale; item.y += my*scale;
+    });
   }
-  return {positions,sites:[]};
+}
+
+// Greedy pass that guarantees free space: items nearest to the centre keep their place,
+// the rest take the first free point on an outward spiral stretched to the screen proportions.
+function placeWithoutOverlap(items, gap, aspect) {
+  const cx = diagramMean(items.map(item=>item.x)), cy = diagramMean(items.map(item=>item.y));
+  const order = [...items].sort((a,b)=>Math.hypot(a.x-cx,a.y-cy)-Math.hypot(b.x-cx,b.y-cy)||diagramByText(a.key,b.key));
+  const placed = [], stretch = Math.sqrt(aspect), step = 6;
+  const free = ([l,t,r,b]) => placed.every(([pl,pt,pr,pb])=>r+gap<=pl||pr+gap<=l||b+gap<=pt||pb+gap<=t);
+  for (const item of order) {
+    const [l,t,r,b] = item.bounds;
+    search: for (let radius=0;; radius+=step) {
+      const count = radius ? Math.ceil(2*Math.PI*radius/step) : 1;
+      for (let index=0; index<count; index++) {
+        const angle = index/count*2*Math.PI;
+        const x = item.x+radius*Math.cos(angle)*stretch, y = item.y+radius*Math.sin(angle)/stretch;
+        if (free([l+x,t+y,r+x,b+y])) { item.x=x; item.y=y; break search; }
+      }
+    }
+    placed.push([l+item.x,t+item.y,r+item.x,b+item.y]);
+  }
+}
+
+// Spread starting points so the group keeps the arrangement from the classic map at diagram scale.
+function diagramStart(entries, k) {
+  const xs = entries.map(({node})=>node.x), ys = entries.map(({node})=>node.y);
+  const cx = diagramMean(xs), cy = diagramMean(ys);
+  const spread = Math.max(Math.max(...xs)-Math.min(...xs),Math.max(...ys)-Math.min(...ys));
+  const scale = spread ? Math.min(8,Math.max(.5,k*Math.sqrt(entries.length)/spread)) : 1;
+  const taken = new Map();
+  return entries.map(({node},index)=>{
+    let x = (node.x-cx)*scale, y = (node.y-cy)*scale;
+    const key = `${Math.round(x)}:${Math.round(y)}`, repeat = taken.get(key) || 0;
+    taken.set(key,repeat+1);
+    // Stacked imported icons unfold along a golden-angle spiral, in a stable order.
+    if (repeat) { x += Math.cos(repeat*2.39996)*k*.5*Math.sqrt(repeat); y += Math.sin(repeat*2.39996)*k*.5*Math.sqrt(repeat); }
+    return {key:node.id,x,y,index};
+  });
+}
+
+function layoutDiagramGroup(entries, links, aspect) {
+  const k = diagramMean(entries.map(({labels:{bounds:[l,t,r,b]}})=>Math.hypot(r-l,b-t)))*.6+diagramSpacing;
+  const items = diagramStart(entries,k), index = new Map(entries.map(({node},i)=>[node.id,i]));
+  relaxDiagram(items,links.map(edge=>[index.get(edge.from_id),index.get(edge.to_id),1]),k,aspect,160);
+  items.forEach((item,i)=>{ item.bounds = entries[i].labels.bounds; });
+  placeWithoutOverlap(items,diagramSpacing,aspect);
+  return items;
+}
+
+// Two-level layout: devices inside each site, then the sites as blocks with a caption and no frame.
+function layoutDiagram(nodes, edges, viewport) {
+  const style = getComputedStyle(viewport);
+  const fontScale = Number(style.getPropertyValue('--font-scale')) || 1;
+  // Only the window orientation shapes the layout: open panels must not move devices around.
+  const aspect = innerWidth>=innerHeight ? 1.6 : .8;
+  const measure = diagramMeasure(style.fontFamily,fontScale), groups = new Map(), siteOf = new Map();
+  for (const node of [...nodes].sort((a,b)=>diagramByText(a.id,b.id))) {
+    const site = node.site || '';
+    if (!groups.has(site)) groups.set(site,[]);
+    groups.get(site).push({node,labels:diagramLabelSizes(node,fontScale,measure)});
+    siteOf.set(node.id,site);
+  }
+  const links = edges.filter(edge=>siteOf.has(edge.from_id)&&siteOf.has(edge.to_id)&&edge.from_id!==edge.to_id);
+  const laid = [...groups].sort(([a],[b])=>(a==='')-(b==='')||a.localeCompare(b,uiLocale,{numeric:true})).map(([name,entries])=>{
+    const items = layoutDiagramGroup(entries,links.filter(edge=>siteOf.get(edge.from_id)===name&&siteOf.get(edge.to_id)===name),aspect);
+    return {name,entries,items,
+      left:Math.min(...items.map(item=>item.x+item.bounds[0])),right:Math.max(...items.map(item=>item.x+item.bounds[2])),
+      top:Math.min(...items.map(item=>item.y+item.bounds[1])),bottom:Math.max(...items.map(item=>item.y+item.bounds[3]))};
+  });
+  // Site captions grow with the whole diagram so they stay legible when it is fitted on screen.
+  const area = laid.reduce((sum,group)=>sum+(group.right-group.left)*(group.bottom-group.top),0);
+  const captionScale = Math.min(4,Math.max(1,Math.sqrt(area*2)/1400));
+  const captionHeight = groups.size>1 ? 30*fontScale*captionScale : 0;
+  const blocks = laid.map(({name,entries,items,left,right,top,bottom})=>{
+    const x = (left+right)/2, captionWidth = captionHeight ? measure.caption(name||tr("Без площадки"),captionScale)+16 : 0;
+    const half = Math.max(right-left,captionWidth)/2, y = (top-captionHeight+bottom)/2;
+    return {name,entries,items,key:name,local:[x,y],bounds:[-half,top-captionHeight-y,half,bottom-y],
+      start:[diagramMean(entries.map(({node})=>node.x)),diagramMean(entries.map(({node})=>node.y))]};
+  });
+  if (blocks.length>1) {
+    const k = diagramMean(blocks.map(({bounds:[l,t,r,b]})=>Math.hypot(r-l,b-t)))*.6;
+    const xs = blocks.map(block=>block.start[0]), ys = blocks.map(block=>block.start[1]);
+    const spread = Math.max(Math.max(...xs)-Math.min(...xs),Math.max(...ys)-Math.min(...ys));
+    const scale = spread ? Math.max(1,k*Math.sqrt(blocks.length)/spread) : 1;
+    blocks.forEach((block,i)=>{ block.x = block.start[0]*scale+Math.cos(i*2.39996); block.y = block.start[1]*scale+Math.sin(i*2.39996); });
+    const index = new Map(blocks.map((block,i)=>[block.name,i])), weights = new Map();
+    for (const edge of links) {
+      const a = index.get(siteOf.get(edge.from_id)), b = index.get(siteOf.get(edge.to_id));
+      if (a===b) continue;
+      const key = a<b ? `${a}:${b}` : `${b}:${a}`;
+      weights.set(key,(weights.get(key)||0)+1);
+    }
+    const blockLinks = [...weights].map(([key,count])=>[...key.split(':').map(Number),Math.min(3,count)]);
+    relaxDiagram(blocks,blockLinks,k,aspect,120);
+    placeWithoutOverlap(blocks,56,aspect);
+  } else if (blocks.length) { blocks[0].x = blocks[0].local[0]; blocks[0].y = blocks[0].local[1]; }
+  const positions = new Map(), sites = [];
+  for (const block of blocks) {
+    const dx = block.x-block.local[0], dy = block.y-block.local[1];
+    block.items.forEach((item,i)=>positions.set(item.key,diagramPosition(block.entries[i].labels,item.x+dx,item.y+dy)));
+    const [l,t,r,b] = block.bounds.map((value,i)=>value+(i%2?block.y:block.x));
+    if (captionHeight) sites.push({name:block.name,bounds:[l,t,r,b],caption:{x:l,y:t,width:r-l,height:captionHeight,scale:captionScale}});
+  }
+  return {positions,sites};
 }
 
 function diagramPosition(labels, x, y) {
   const [l,t,r,b] = labels.bounds;
   return {...labels,x,y,bounds:[l+x,t+y,r+x,b+y]};
-}
-
-function layoutDiagramSites(entries, fontScale) {
-  const grouped = new Map(), positions = new Map(), sites = [];
-  const pad = 16, gap = 24, header = 28*fontScale;
-  for (const entry of entries) {
-    const site = entry.node.site || '';
-    if (!grouped.has(site)) grouped.set(site,[]);
-    grouped.get(site).push(entry);
-  }
-  const blocks = [...grouped].map(([name,members])=>{
-    const columns = Math.min(8,members.length,Math.ceil(Math.sqrt(members.length*1.25)));
-    let cellWidth = 104, cellHeight = 100;
-    for (const {labels:{bounds:[left,top,right,bottom]}} of members) {
-      cellWidth = Math.max(cellWidth,right-left+diagramSpacing);
-      cellHeight = Math.max(cellHeight,bottom-top+diagramSpacing);
-    }
-    members.sort((a,b)=>a.node.name.localeCompare(b.node.name,uiLocale,{numeric:true}));
-    return {name,members,columns,cellWidth,cellHeight,width:Math.max(168,columns*cellWidth+2*pad),
-      height:header+gap+Math.ceil(members.length/columns)*cellHeight};
-  });
-  blocks.sort((a,b)=>b.height-a.height||a.name.localeCompare(b.name,uiLocale,{numeric:true}));
-  const area=blocks.reduce((sum,b)=>sum+(b.width+gap)*(b.height+gap),0);
-  const widest=blocks.reduce((max,b)=>Math.max(max,b.width+gap),0);
-  const skyline=Array(Math.ceil(Math.max(widest,Math.sqrt(1.6*area))/gap)).fill(0);
-  for (const {name,members,columns,cellWidth,cellHeight,width,height} of blocks) {
-    const span=Math.ceil((width+gap)/gap);
-    let column=0,y=Infinity;
-    for(let i=0;i+span<=skyline.length;i++){
-      let top=0;
-      for(let j=i;j<i+span;j++)top=Math.max(top,skyline[j]);
-      if(top<y){column=i;y=top;}
-    }
-    const x=column*gap;
-    skyline.fill(y+height+gap,column,column+span);
-    const bounds = [x,y,x+width,y+height];
-    sites.push({name,bounds,header,count:members.length});
-    members.forEach(({node,labels},index)=>{
-      const nodeX = x+(width-columns*cellWidth)/2+(index%columns+.5)*cellWidth;
-      const nodeY = y+header+pad-labels.bounds[1]+Math.floor(index/columns)*cellHeight;
-      positions.set(node.id,diagramPosition(labels,nodeX,nodeY));
-    });
-  }
-  return {positions,sites};
 }
 
 function diagramText(x, y, width, height, className, ...children) {
@@ -154,17 +199,18 @@ function diagramText(x, y, width, height, className, ...children) {
   return field;
 }
 
-function drawDiagramSite({name,bounds:[x,y,right,bottom],header,count}, onFocus) {
-  const width=right-x, label=name||tr("Без площадки");
-  const group=elem('g',{class:'diagram-site'});
-  const title=elem('g',{class:'diagram-site-title',tabindex:'0',role:'button','aria-label':tr("Приблизить площадку {0}", label)});
-  title.append(elem('rect',{x,y,width,height:header,rx:7,fill:'transparent'}),elem('title',{},label),
-    diagramText(x+10,y,width-20,header,'diagram-site-label',html('span','diagram-ellipsis',label),html('span','diagram-site-count',String(count))));
+function drawDiagramSite({name,caption:{x,y,width,height,scale}}, onFocus) {
+  const label = name || tr("Без площадки");
+  const group = elem('g',{class:`diagram-site${name?'':' unlabeled'}`});
+  group.style.setProperty('--caption-scale',scale);
+  const title = elem('g',{class:'diagram-site-title',tabindex:'0',role:'button','aria-label':tr("Приблизить площадку {0}", label)});
+  title.append(elem('rect',{x,y,width,height,rx:4,fill:'transparent'}),
+    diagramText(x,y,width,height,'diagram-site-label',html('span','diagram-ellipsis',label)));
   title.addEventListener('click',onFocus);
   title.addEventListener('keydown',event=>{
     if(event.key==='Enter'||event.key===' '){event.preventDefault();onFocus();}
   });
-  group.append(elem('rect',{class:'diagram-site-area',x,y,width,height:bottom-y,rx:7}),title);
+  group.append(title);
   return group;
 }
 

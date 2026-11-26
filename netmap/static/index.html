@@ -112,7 +112,7 @@
   <header class="topbar">
     <a class="brand" href="./"><span class="brand-mark" aria-hidden="true">⌘</span><span><span>Netmap Pinger</span><small id="map-name" data-i18n>Мониторинг</small></span></a>
     <nav class="map-toolbar" aria-label="Управление картой" data-i18n-attrs="aria-label">
-      <div class="map-views" role="group" aria-label="Вид карты" data-i18n-attrs="aria-label"><button id="view-classic" aria-pressed="true" data-i18n>Карта</button><button id="view-diagram" aria-pressed="false" data-i18n>Схема</button></div>
+      <div class="map-views" role="group" aria-label="Вид карты" data-i18n-attrs="aria-label"><button id="view-classic" aria-pressed="true" data-i18n>Карта</button><button id="view-diagram" aria-pressed="false" data-i18n>Схема</button><select id="diagram-site" aria-label="Площадка на схеме" data-i18n-attrs="aria-label" hidden></select></div>
       <div><button id="fit" title="Показать всю карту" data-i18n-attrs="title" data-i18n>Вся карта</button><button id="zoom-in" aria-label="Приблизить" data-i18n-attrs="aria-label">+</button><button id="zoom-out" aria-label="Отдалить" data-i18n-attrs="aria-label">−</button></div>
       <div><button id="edit-layout" aria-pressed="false" title="Ctrl/⌘ или Shift + клик — выбрать несколько узлов; Shift + рамка — выделить группу. Стрелки — шаг 1, Shift + стрелки — шаг 10. Положение сохраняется автоматически." data-i18n-attrs="title" data-i18n>Двигать узлы</button><button id="group-select" aria-pressed="false" title="Выбирайте узлы нажатием или обведите рамкой; потяните выделенный узел для переноса группы. Работает и на сенсорном экране." hidden data-i18n-attrs="title" data-i18n>Выделить группу</button></div>
       <div role="group" aria-label="Добавить на карту" data-i18n-attrs="aria-label" data-map-edit><button id="add-node" class="primary" data-i18n>+ Узел</button><button id="add-edge" data-i18n>+ Связь</button></div>
@@ -127,11 +127,6 @@
       <footer class="sidebar-footer"><a id="map-export" href="api/export" download data-i18n>Скачать карту</a><button id="import-button" class="text-button" data-i18n>Загрузить копию</button><input id="import-file" type="file" accept="application/json,.json" hidden></footer>
     </aside>
     <section class="map-panel" aria-label="Карта сети" data-i18n-attrs="aria-label">
-      <div id="diagram-tools" class="diagram-tools" hidden>
-        <button id="diagram-group" aria-pressed="true" title="Сгруппировать узлы по полю «Площадка»" data-i18n-attrs="title" data-i18n>По площадкам</button>
-        <button id="diagram-links" aria-pressed="false" title="В обзоре видны связи внутри площадок и связи выбранного узла" data-i18n-attrs="title" data-i18n>Все связи</button>
-        <select id="diagram-site" aria-label="Площадка" data-i18n-attrs="aria-label" hidden></select>
-      </div>
       <svg id="map" xmlns="http://www.w3.org/2000/svg" aria-label="Узлы и связи сети" role="group" data-i18n-attrs="aria-label"><g id="site-layer"></g><g id="edge-layer"></g><g id="node-layer"></g></svg>
       <p id="layout-help" class="layout-help" role="status" hidden></p>
       <div class="map-empty" id="map-empty" hidden data-i18n>Добавьте узел или загрузите сохранённую карту.</div>

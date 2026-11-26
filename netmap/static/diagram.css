@@ -1,10 +1,12 @@
 .topbar .map-toolbar > .map-views {
   gap: 0;
+  flex-wrap: nowrap;
+  align-items: center;
 }
 .map-views button:first-child {
   border-radius: 4px 0 0 4px;
 }
-.map-views button:last-child {
+.map-views button:last-of-type {
   margin-left: -1px;
   border-radius: 0 4px 4px 0;
 }
@@ -12,35 +14,25 @@
   position: relative;
   z-index: 1;
 }
+.map-views select {
+  width: auto;
+  max-width: 150px;
+  height: 20px;
+  min-height: 0;
+  margin: 0 0 0 6px;
+  padding: 0 4px;
+  font-size: calc(10px * var(--font-scale, 1));
+}
 @media (max-width: 850px) {
   .topbar .map-toolbar button { padding-inline: 5px; }
+  .map-views select { height: 32px; }
 }
 .map-panel.diagram {
   background-image: linear-gradient(light-dark(#e5ecf2,#273640) 1px,transparent 1px),
     linear-gradient(90deg,light-dark(#e5ecf2,#273640) 1px,transparent 1px);
   background-size: 24px 24px;
 }
-.diagram-tools:not([hidden]) {
-  display: flex;
-  flex: none;
-  gap: 5px;
-  padding: 4px 8px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-}
-.diagram-tools button, .diagram-tools select {
-  min-height: 24px;
-  padding: 2px 8px;
-  font-size: calc(10px * var(--font-scale, 1));
-}
-.diagram-tools select { width: min(180px, 42%); }
-.diagram .layout-help { top: 36px; }
-.diagram-site-area {
-  fill: light-dark(#f4faff,#20313c);
-  stroke: light-dark(#b8cbd8,#405b6f);
-  stroke-width: 1.35;
-  pointer-events: none;
-}
+/* A site is a captioned group of devices without a frame. */
 .diagram-site-title { cursor: pointer; }
 .diagram-site-title:hover rect, .diagram-site-title:focus-visible rect {
   fill: light-dark(#dcecf8,#2c485d);
@@ -54,14 +46,15 @@
   color: var(--ink);
 }
 .diagram-site-label {
-  justify-content: space-between;
-  font-size: calc(13px * var(--font-scale, 1));
-  border-bottom: 1px solid var(--border);
+  justify-content: center;
+  font-size: calc(19px * var(--font-scale, 1) * var(--caption-scale, 1));
+  font-weight: 750;
+  letter-spacing: .02em;
 }
-.diagram-site-count {
-  flex: none;
-  font-size: .88em;
+.diagram-site.unlabeled .diagram-site-label {
   color: var(--muted);
+  font-weight: 600;
+  font-style: italic;
 }
 /* The symbol body is painted in the node state; the shape alone tells the device type. */
 .diagram .map-node {

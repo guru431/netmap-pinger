@@ -167,7 +167,10 @@ async function check(browserType, mobile=false) {
     const deviceFronts=await page.locator('.diagram .map-node').evaluateAll(nodes=>nodes.map(node=>getComputedStyle(node).getPropertyValue('--device-front')));
     assert.notEqual(deviceFronts[0],deviceFronts[1]);
     assert.equal(await page.locator('.diagram-status-mark, .diagram-state-ring, .diagram-more').count(),0);
-    assert.equal(await page.locator('#site-layer .diagram-site').count(),2);
+    // Sites are captioned groups: no frames and no extra toolbar row.
+    assert.equal(await page.locator('#diagram-tools, #diagram-group, #diagram-links, .diagram-site-area').count(),0);
+    assert.equal(await page.locator('#diagram-site').isVisible(),true);
+    assert.deepEqual(await page.locator('#site-layer .diagram-site').allTextContents(),['Site B','Без площадки']);
     assert.equal(await page.locator('.diagram-site-title[aria-label="Приблизить площадку Site B"]').count(),1);
     const fitWidth=await page.evaluate(()=>view.w);
     await page.locator('.diagram-site-title[aria-label="Приблизить площадку Site B"]').click();
@@ -178,35 +181,28 @@ async function check(browserType, mobile=false) {
     await page.locator('#node-dialog').getByRole('button',{name:'Отмена',exact:true}).click();
     await page.locator('#diagram-site').selectOption('');
     assert.equal(await page.evaluate(()=>view.w),fitWidth);
-    assert.equal(await page.locator('#edge-layer > g:not(.diagram-link-hidden)').count(),0);
     assert.deepEqual(await page.locator('.diagram-target').allTextContents(),['192.0.2.1','router.example']);
     assert.deepEqual(await page.locator('.diagram-channel').allTextContents(),['LAN','WAN']);
     await page.locator('.map-node[data-id="a"] .diagram-symbol-hit').click();
-    assert.equal(await page.locator('#edge-layer > g:not(.diagram-link-hidden)').count(),2);
     assert.equal(await page.locator('#address-results .address-row').count(),2);
     await page.locator('#address-results button[aria-label="История router.example"]').click();
     assert.equal(await page.locator('#history-target').inputValue(),'router.example');
     await page.locator('#history-dialog [data-close]').first().click();
     await page.locator('#close-details').click();
-    await page.locator('#diagram-links').click();
-    assert.equal(await page.locator('#edge-layer > g:not(.diagram-link-hidden)').count(),5);
-    await page.locator('#diagram-group').click();
-    assert.equal(await page.locator('#site-layer .diagram-site').count(),0);
-    assert.equal(await page.locator('#edge-layer > g:not(.diagram-link-hidden)').count(),6);
-    assert.equal(await page.locator('.edge-open .edge-end').count(),4);
-    assert.equal(await page.locator('#edge-layer .edge-path').first().getAttribute('d'),'M100 100 L180 50 L260 100');
-    assert.equal(await page.locator('#edge-layer .edge-path').last().getAttribute('d'),'M100 100 L100 400');
     await page.locator('.diagram-address[data-target="192.0.2.1"] .diagram-address-hit').click();
     assert.equal(await page.locator('#history-target').inputValue(),'192.0.2.1');
     await page.locator('#history-dialog [data-close]').first().click();
+    const arranged=await page.locator('.diagram .map-node').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('transform')));
     await page.reload();await page.locator('.diagram-address').first().waitFor();
     assert.equal(await page.locator('#view-diagram').getAttribute('aria-pressed'),'true');
+    assert.deepEqual(await page.locator('.diagram .map-node').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('transform'))),arranged);
     const screenshotDir=process.env.NETMAP_BROWSER_OUTPUT_DIR;
     if(screenshotDir){
       await fs.mkdir(screenshotDir,{recursive:true});
       await page.screenshot({path:path.join(screenshotDir,`${browserType.name()}-${mobile?'touch':'desktop'}-diagram.png`)});
     }
     await page.locator('#view-classic').click();
+    assert.equal(await page.locator('#diagram-site').isHidden(),true);
     assert.equal(await page.locator('#edge-layer .edge-path').first().getAttribute('d'),'M100 100 L180 50 L260 100');
     assert.deepEqual(stored,fixture());assert.equal(writes,0);
     // Invalid report URLs neither consume the ten visible slots nor inflate the remainder.
@@ -277,19 +273,17 @@ async function check(browserType, mobile=false) {
     assert.deepEqual(await selection(),['a','b']);
     const internalPath=await page.locator('#edge-layer .edge-path').first().getAttribute('d');
     assert.equal(internalPath,stored.edges[0].points.map(([x,y],i)=>`${i?'L':'M'}${x} ${y}`).join(' '));
-    await page.locator('#view-diagram').click();
     await page.locator('.map-node[data-id="a"]').focus();
     await page.keyboard.press('ArrowRight');await waitWrites(2);
     await page.keyboard.press('Shift+ArrowDown');await waitWrites(3);
     assert.deepEqual(stored.nodes.slice(0,2).map(n=>[n.x,n.y]),[[101+dx,110+dy],[261+dx,110+dy]]);
     const {x:ax,y:ay}=stored.nodes[0],{x:bx,y:by}=stored.nodes[1];
     const beforeCancel=structuredClone(stored);
-    const diagramPath=await page.locator('#edge-layer .edge-path').first().getAttribute('d');
+    const movedPath=await page.locator('#edge-layer .edge-path').first().getAttribute('d');
     await dragWorld(ax,ay,20,20,true);
     assert.deepEqual(stored,beforeCancel);assert.equal(writes,3);
     assert.equal(await page.locator('.map-node[data-id="a"]').getAttribute('transform'),`translate(${ax} ${ay})`);
-    assert.equal(await page.locator('#edge-layer .edge-path').first().getAttribute('d'),diagramPath);
-    await page.locator('#view-classic').click();
+    assert.equal(await page.locator('#edge-layer .edge-path').first().getAttribute('d'),movedPath);
     console.log('  move, edges, arrows and pointer cancellation passed');
     rejectSave=true;
     await dragWorld(ax,ay,20,20);
@@ -538,49 +532,63 @@ async function check(browserType, mobile=false) {
     assert.equal(writes,9);
     assert.deepEqual(errors,[]);
 
-    // A map imported with coincident coordinates still shows each device and its labels.
+    // Several sites, stacked imported coordinates, long names and up to ten addresses per device.
     const dense = fixture();
     dense.revision = stored.revision+1;
-    for (const node of dense.nodes) { node.x=200; node.y=170; }
-    for (const [index,kind] of ['Access point','Cloud','NAS','WorkStation','Network printer','Phone','Camera','Device'].entries()) {
-      const id=`extra${index}`;
-      dense.nodes.push({...dense.nodes[2],id,name:`${kind} ${index+1}`,kind,addresses:[`192.0.2.${index+10}`,`${id}.example.org`]});
-      dense.edges.push({id,from_id:'c',to_id:id,points:[],label:'',color:'#7894a5'});
+    dense.nodes = []; dense.edges = [];
+    const kinds = ['Router','Switch','Server','WorkStation','Firewall','NAS','Access point','Cloud','Network printer','Camera','Phone','Device'];
+    for (const [site,count] of [['North',1],['East',3],['South',8],['West',14],['Core',40],['',6]]) {
+      for (let i=0; i<count; i++) {
+        const n=dense.nodes.length, id=`n${n}`, kind=kinds[n%kinds.length];
+        const addresses=Array.from({length:n%11},(_,k)=>k%3===2?`interface-${k}.device-${n}.long-site-name.example`:`192.0.2.${(n*11+k)%250+1}`);
+        dense.nodes.push({id,name:`${site||'Unlabeled'} ${kind} ${i+1}`,kind,site,addresses,notes:'',enabled:true,allow_offline:false,
+          x:n%2?200:100+(n%7)*40,y:n%2?170:100+Math.floor(n/7)*35,address_comments:{},
+          address_channels:Object.fromEntries(addresses.slice(0,2).map((target,k)=>[target,k?'wan':'lan']))});
+      }
     }
+    const firstOf = {};
+    dense.nodes.forEach((node,index)=>{
+      const previous=dense.nodes[index-1];
+      if (previous?.site===node.site) dense.edges.push({id:`e${index}`,from_id:previous.id,to_id:node.id,points:[],label:'',color:'#7894a5'});
+      firstOf[node.site] ??= node.id;
+    });
+    for (const site of Object.keys(firstOf)) if (site!=='Core') dense.edges.push({id:`up-${site}`,from_id:firstOf[site],to_id:firstOf.Core,points:[],label:'uplink',color:'#3b82f6'});
+    dense.edges.push({id:'loose',from_id:firstOf.North,to_id:null,points:[[100,100],[140,140]],label:'',color:'#7894a5'});
     stored = dense;
     await page.reload();
     await page.locator('.diagram .map-node').first().waitFor();
-    await page.locator('#diagram-group').click();
-    const bounds = await page.locator('.diagram .map-node').evaluateAll(nodes=>nodes.map(node=>{
+    const separate=(a,b)=>a[2]<=b[0]||b[2]<=a[0]||a[3]<=b[1]||b[3]<=a[1];
+    const diagramBoxes=()=>page.locator('.diagram .map-node').evaluateAll(nodes=>nodes.map(node=>{
       const box=node.getBBox(), {e:x,f:y}=node.transform.baseVal.getItem(0).matrix;
-      return [x+box.x,y+box.y,x+box.x+box.width,y+box.y+box.height];
+      return {id:node.dataset.id,box:[x+box.x,y+box.y,x+box.x+box.width,y+box.y+box.height]};
     }));
-    for (const [i,a] of bounds.entries()) {
-      for (const b of bounds.slice(i+1)) assert.ok(a[2]<=b[0]||b[2]<=a[0]||a[3]<=b[1]||b[3]<=a[1],
-        'diagram symbols and labels must have separate space');
+    const placed=await diagramBoxes();
+    for (const [i,a] of placed.entries()) for (const b of placed.slice(i+1)) assert.ok(separate(a.box,b.box),`${a.id} and ${b.id} overlap`);
+    const groups=await page.evaluate(()=>diagramSites.map(({name,bounds})=>({name,bounds})));
+    assert.deepEqual(groups.map(group=>group.name).sort(),['','Core','East','North','South','West']);
+    for (const [i,a] of groups.entries()) for (const b of groups.slice(i+1)) assert.ok(separate(a.bounds,b.bounds),`sites ${a.name} and ${b.name} overlap`);
+    const siteOf=Object.fromEntries(dense.nodes.map(node=>[node.id,node.site]));
+    for (const {id,box} of placed) {
+      // getBBox() reports single-precision values.
+      const [left,top,right,bottom]=groups.find(group=>group.name===siteOf[id]).bounds.map((value,i)=>value+(i<2?-.01:.01));
+      assert.ok(box[0]>=left&&box[1]>=top&&box[2]<=right&&box[3]<=bottom,`${id} lies outside its site group`);
     }
-    assert.equal(await page.evaluate(()=>graph.edges.every(edge=>{
-      const {points}=edgeElements.get(edge.id);
-      return [[edge.from_id,points[0]],[edge.to_id,points.at(-1)]].every(([id,[x,y]])=>{
-        if (!id) return true;
-        const {e,f}=nodeElements.get(id).group.transform.baseVal.getItem(0).matrix;
-        return Math.hypot(x-e,y-f)<1e-4;
-      });
-    })),true);
+    assert.equal(await page.locator('#site-layer .diagram-site').count(),6);
     if(screenshotDir)await page.screenshot({path:path.join(screenshotDir,`${browserType.name()}-${mobile?'touch':'desktop'}-diagram-dense.png`)});
-    const displaced = page.locator('.map-node[data-id="b"]');
-    const shiftedTransform = await displaced.getAttribute('transform');
-    assert.notEqual(shiftedTransform,'translate(200 170)');
-    const center = await displaced.evaluate(node=>{
-      const {e,f}=node.transform.baseVal.getItem(0).matrix;
-      return [e,f];
+    await page.reload();
+    await page.locator('.diagram .map-node').first().waitFor();
+    assert.deepEqual(await diagramBoxes(),placed);
+    const layoutTime=await page.evaluate(()=>{
+      const nodes=Array.from({length:500},(_,i)=>({id:`p${i}`,name:`Perf node ${i}`,kind:'Server',site:`Site ${i%8}`,
+        x:(i%25)*40,y:Math.floor(i/25)*40,addresses:['192.0.2.1','192.0.2.2'],address_channels:{}}));
+      const edges=nodes.slice(1).map((node,i)=>({id:`pe${i}`,from_id:nodes[i].id,to_id:node.id,points:[]}));
+      const started=performance.now();layoutDiagram(nodes,edges,svg);return performance.now()-started;
     });
-    await page.locator('#edit-layout').click();
-    await dragWorld(...center,14,12,true);
-    assert.equal(await displaced.getAttribute('transform'),shiftedTransform);
+    console.log(`  diagram layout of 500 nodes: ${Math.round(layoutTime)} ms`);
+    assert.ok(layoutTime<1500,`diagram layout took ${layoutTime} ms`);
     await page.locator('#view-classic').click();
     assert.deepEqual(await page.locator('.map-node').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('transform'))),
-      dense.nodes.map(()=> 'translate(200 170)'));
+      dense.nodes.map(node=>`translate(${node.x} ${node.y})`));
     assert.equal(writes,9);
 
     account=directory.users[0];
