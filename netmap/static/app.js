@@ -27,7 +27,7 @@ const touchPointers = new Map();
 let pinch = null, blockMapClick = false;
 const svg = $('map');
 let diagramView = false;
-let diagramLayout = new Map(), diagramSites = [], diagramRoutes = new Map();
+let diagramLayout = new Map(), diagramSites = [], diagramRoutes = new Map(), diagramLinkBounds = [];
 const mapViewKey = 'netmap-map-view';
 const editLayoutTitle = $('edit-layout').title;
 
@@ -102,7 +102,7 @@ function fit() {
   autoFit = true;
   if (diagramView) {
     $('diagram-site').value='';
-    view = diagramViewport(graph.nodes,[],{sites:diagramSites});
+    view = diagramViewport(graph.nodes,[],{sites:[...diagramSites,...diagramLinkBounds]});
     viewChanged();
     return;
   }
@@ -214,6 +214,10 @@ function drawGraph() {
   nodeElements.clear(); edgeElements.clear();
   const layout=diagramView ? layoutDiagram(graph.nodes,graph.edges,svg) : {positions:new Map(),sites:[]};
   diagramLayout=layout.positions; diagramSites=layout.sites; diagramRoutes=layout.routes||new Map();
+  // Links between sites may run outside the sites; "Fit map" keeps them on screen.
+  const linkPoints=[...(layout.siteLinks||[]).flatMap(link=>link.points),...(layout.siteBars||[]).flatMap(bar=>[...bar.points,...bar.bar])];
+  diagramLinkBounds=linkPoints.length?[{bounds:[Math.min(...linkPoints.map(p=>p[0])),Math.min(...linkPoints.map(p=>p[1])),
+    Math.max(...linkPoints.map(p=>p[0])),Math.max(...linkPoints.map(p=>p[1]))]}]:[];
   const sitePicker=$('diagram-site'), previousSite=sitePicker.value;
   sitePicker.disabled=!diagramSites.length;
   const siteNames=diagramSites.map(({name})=>name).sort((a,b)=>a.localeCompare(b,uiLocale,{numeric:true}));
