@@ -240,25 +240,8 @@ function drawDiagramAddress(layout, target, index) {
   return {point,circle};
 }
 
-function diagramEdgePoints(points, from, to, layout, grouped) {
-  const fromPoint = layout.get(from?.id), toPoint = layout.get(to?.id);
-  if (grouped) {
-    if (fromPoint&&toPoint) return [[fromPoint.x,fromPoint.y],[toPoint.x,toPoint.y]];
-    const attached=fromPoint||toPoint;
-    if (attached) {
-      const [px,py]=points[0], [qx,qy]=points.at(-1);
-      const length=Math.hypot(qx-px,qy-py);
-      const dx=length?(qx-px)*49/length:49, dy=length?(qy-py)*49/length:0;
-      const {x,y}=attached;
-      return fromPoint?[[x,y],[x+dx,y+dy]]:[[x-dx,y-dy],[x,y]];
-    }
-  }
-  const dx1 = fromPoint ? fromPoint.x-from.x : 0, dy1 = fromPoint ? fromPoint.y-from.y : 0;
-  const dx2 = toPoint ? toPoint.x-to.x : 0, dy2 = toPoint ? toPoint.y-to.y : 0;
-  if (!dx1&&!dy1&&!dx2&&!dy2) return points;
-  // Keep free endpoints fixed and share the displacement across the intervening bends.
-  return points.map(([x,y],index)=>{
-    const t = index/(points.length-1);
-    return [x+dx1*(1-t)+dx2*t, y+dy1*(1-t)+dy2*t];
-  });
+// A topology link on the diagram is a straight line between the two device symbols.
+function diagramEdgePoints(from, to, layout) {
+  const start = layout.get(from.id), end = layout.get(to.id);
+  return [[start.x,start.y],[end.x,end.y]];
 }

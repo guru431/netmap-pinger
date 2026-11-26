@@ -29,6 +29,7 @@ const svg = $('map');
 let diagramView = false;
 let diagramLayout = new Map(), diagramSites = [];
 const mapViewKey = 'netmap-map-view';
+const editLayoutTitle = $('edit-layout').title;
 
 function elem(tag, attrs = {}, text = null) {
   const el = document.createElementNS(NS, tag);
@@ -138,11 +139,14 @@ function renderMapView(useDiagram) {
   $('view-classic').setAttribute('aria-pressed',String(!useDiagram));
   $('view-diagram').setAttribute('aria-pressed',String(useDiagram));
   $('diagram-site').hidden=!useDiagram;
+  $('edit-layout').disabled=useDiagram;
+  $('edit-layout').title=useDiagram?tr("На схеме узлы расставляются автоматически. Двигать узлы можно в режиме «Карта»."):editLayoutTitle;
   svg.parentElement.classList.toggle('diagram',useDiagram);
 }
 function switchMapView(useDiagram) {
   if (diagramView === useDiagram) return;
   cancelMapGesture();
+  if (useDiagram && editLayout) setEditLayout(false);
   renderMapView(useDiagram);
   autoFit=true;
   try { localStorage.setItem(mapViewKey,useDiagram?'diagram':'classic'); } catch { /* Optional preference. */ }
@@ -179,15 +183,10 @@ function edgePoints(edge, overrides = new Map(), from = graph.nodes.find(n=>n.id
   });
 }
 function updateEdgeGeometry(edge, refs, overrides = new Map()) {
-  const logical = edgePoints(edge,overrides,refs.from,refs.to);
-  const pts = diagramView ? diagramEdgePoints(logical,refs.from,refs.to,diagramLayout,true) : logical;
+  const pts = diagramView ? diagramEdgePoints(refs.from,refs.to,diagramLayout) : edgePoints(edge,overrides,refs.from,refs.to);
   const path = pts.map((p,i) => `${i?'L':'M'}${p[0]} ${p[1]}`).join(' ');
   refs.points = pts;
   refs.path.setAttribute('d',path); refs.hit.setAttribute('d',path);
-  for (const [index, marker] of refs.markers) {
-    const [x,y] = pts.at(index);
-    marker.setAttribute('cx',x); marker.setAttribute('cy',y);
-  }
   const middle = pts[Math.floor((pts.length-1)/2)], end = pts[Math.ceil((pts.length-1)/2)];
   refs.label.setAttribute('x',(middle[0]+end[0])/2); refs.label.setAttribute('y',(middle[1]+end[1])/2-4);
 }
@@ -227,6 +226,7 @@ function drawGraph() {
   const nodes = new Map(graph.nodes.map(node=>[node.id,node]));
   for (const edge of graph.edges) {
     const from = nodes.get(edge.from_id) ?? null, to = nodes.get(edge.to_id) ?? null;
+    if (diagramView && (!from || !to)) continue;
     const group = elem('g'), path = elem('path',{class:'edge-path',stroke:edge.color});
     const hit = elem('path',{class:'edge-hit',tabindex:'0',role:'button','data-map-edit':'','aria-label':edge.label || tr("Изменить связь")});
     const label = elem('text',{class:'edge-label','text-anchor':'middle'},edge.label);
@@ -234,17 +234,8 @@ function drawGraph() {
     hit.append(title); hit.addEventListener('click',()=>openEdge(edge.id));
     hit.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();openEdge(edge.id);}});
     group.append(path);
-    const markers = new Map();
-    if (diagramView && (!from || !to)) {
-      group.classList.add('edge-open');
-      for (const index of [0,-1]) {
-        if (index===0?from:to) continue;
-        const marker=elem('circle',{class:'edge-end',r:2.6,stroke:edge.color});
-        group.append(marker); markers.set(index,marker);
-      }
-    }
     group.append(hit,label); $('edge-layer').append(group);
-    const refs = {from,to,group,path,hit,label,markers}; edgeElements.set(edge.id,refs); updateEdgeGeometry(edge,refs);
+    const refs = {from,to,group,path,hit,label}; edgeElements.set(edge.id,refs); updateEdgeGeometry(edge,refs);
   }
   for (const node of graph.nodes) {
     const group = elem('g',{class:'map-node',transform:mapNodeTransform(node),tabindex:'0',role:'button','data-id':node.id});
@@ -718,9 +709,12 @@ $('zoom-in').addEventListener('click',()=>zoom(.8));$('zoom-out').addEventListen
 function world(event) {const point=svg.createSVGPoint();point.x=event.clientX;point.y=event.clientY;return point.matrixTransform(svg.getScreenCTM().inverse());}
 svg.addEventListener('wheel',event=>{event.preventDefault();zoom(event.deltaY>0?1.12:1/1.12,world(event));},{passive:false});
 $('edit-layout').addEventListener('click',()=>{
-  if(!editLayout&&!canEditMap())return;
+  if(!editLayout&&(!canEditMap()||diagramView))return;
+  setEditLayout(!editLayout);
+});
+function setEditLayout(on) {
   cancelMapGesture();
-  editLayout=!editLayout;$('edit-layout').setAttribute('aria-pressed',String(editLayout));svg.classList.toggle('editing',editLayout);
+  editLayout=on;$('edit-layout').setAttribute('aria-pressed',String(editLayout));svg.classList.toggle('editing',editLayout);
   groupSelect=false;$('group-select').hidden=!editLayout;$('group-select').setAttribute('aria-pressed','false');
   layoutSelection.clear();if(selected)layoutSelection.add(selected);
   if(editLayout)detailsOpen=false;
@@ -730,7 +724,7 @@ $('edit-layout').addEventListener('click',()=>{
   }
   if(editLayout)nodeElements.get(selected)?.group.focus({preventScroll:true});
   drawList();drawDetails();
-});
+}
 $('group-select').addEventListener('click',()=>{
   groupSelect=!groupSelect;$('group-select').setAttribute('aria-pressed',String(groupSelect));
   drawLayoutSelection();

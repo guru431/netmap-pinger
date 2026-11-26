@@ -181,9 +181,18 @@ async function check(browserType, mobile=false) {
     await page.locator('#node-dialog').getByRole('button',{name:'Отмена',exact:true}).click();
     await page.locator('#diagram-site').selectOption('');
     assert.equal(await page.evaluate(()=>view.w),fitWidth);
+    assert.equal(await page.locator('#edit-layout').isDisabled(),true);
+    // Topology links run straight between devices; lines with a free end stay on the classic map.
+    const centres=Object.fromEntries(await page.locator('.diagram .map-node').evaluateAll(nodes=>nodes.map(node=>
+      [node.dataset.id,/^translate\((\S+) (\S+)\)$/.exec(node.getAttribute('transform')).slice(1).join(' ')])));
+    assert.deepEqual(await page.locator('#edge-layer .edge-path').evaluateAll(paths=>paths.map(path=>path.getAttribute('d'))),
+      [`M${centres.a} L${centres.b}`,`M${centres.b} L${centres.c}`,`M${centres.a} L${centres.d}`]);
+    assert.equal(await page.locator('.edge-open, .edge-end').count(),0);
     assert.deepEqual(await page.locator('.diagram-target').allTextContents(),['192.0.2.1','router.example']);
     assert.deepEqual(await page.locator('.diagram-channel').allTextContents(),['LAN','WAN']);
     await page.locator('.map-node[data-id="a"] .diagram-symbol-hit').click();
+    assert.deepEqual(await page.locator('#edge-layer > g.diagram-link-active .edge-path').evaluateAll(paths=>paths.map(path=>path.getAttribute('d'))),
+      [`M${centres.a} L${centres.b}`,`M${centres.a} L${centres.d}`]);
     assert.equal(await page.locator('#address-results .address-row').count(),2);
     await page.locator('#address-results button[aria-label="История router.example"]').click();
     assert.equal(await page.locator('#history-target').inputValue(),'router.example');
@@ -322,6 +331,15 @@ async function check(browserType, mobile=false) {
       await fs.mkdir(screenshotDir,{recursive:true});
       await page.screenshot({path:path.join(screenshotDir,`${browserType.name()}-${mobile?'touch':'desktop'}.png`)});
     }
+    // The diagram arranges devices itself: switching to it ends the move mode and saves nothing.
+    await page.locator('#view-diagram').click();
+    assert.equal(await page.locator('#edit-layout').getAttribute('aria-pressed'),'false');
+    assert.equal(await page.locator('#edit-layout').isDisabled(),true);
+    assert.equal(await page.locator('#group-select').isHidden(),true);
+    assert.equal(await page.locator('#map').evaluate(map=>map.classList.contains('editing')),false);
+    await page.locator('#view-classic').click();
+    assert.equal(await page.locator('#edit-layout').isDisabled(),false);
+    assert.equal(writes,3);
     await page.reload();await page.locator('.map-node').first().waitFor();
     assert.equal(await page.locator('.map-node[data-id="b"]').getAttribute('transform'),`translate(${bx} ${by})`);
     assert.equal(await page.locator('#edge-layer .edge-path').first().getAttribute('d'),
@@ -574,6 +592,7 @@ async function check(browserType, mobile=false) {
       assert.ok(box[0]>=left&&box[1]>=top&&box[2]<=right&&box[3]<=bottom,`${id} lies outside its site group`);
     }
     assert.equal(await page.locator('#site-layer .diagram-site').count(),6);
+    assert.equal(await page.locator('#edge-layer > g').count(),dense.edges.filter(edge=>edge.from_id&&edge.to_id).length);
     if(screenshotDir)await page.screenshot({path:path.join(screenshotDir,`${browserType.name()}-${mobile?'touch':'desktop'}-diagram-dense.png`)});
     await page.reload();
     await page.locator('.diagram .map-node').first().waitFor();

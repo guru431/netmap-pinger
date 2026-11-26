@@ -8,6 +8,7 @@ const netmapEnglish = {
   "Карта": "Map",
   "Схема": "Diagram",
   "Площадка на схеме": "Site on the diagram",
+  "На схеме узлы расставляются автоматически. Двигать узлы можно в режиме «Карта».": "The diagram places nodes automatically. Move nodes on the map view.",
   "Приблизить площадку {0}": "Zoom to site {0}",
   "Показать всю карту": "Fit the entire map",
   "Вся карта": "Fit map",
