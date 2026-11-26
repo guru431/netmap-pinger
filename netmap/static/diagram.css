@@ -146,10 +146,16 @@
   stroke-width: 2.6;
 }
 .diagram .diagram-link-active .edge-label { display: inline; }
+.diagram-site-bar {
+  fill: none;
+  stroke: var(--wire);
+  stroke-width: 2.6;
+  vector-effect: non-scaling-stroke;
+}
 .diagram-site-link-path {
   fill: none;
   stroke: var(--wire);
-  stroke-width: 2.2;
-  opacity: .8;
+  stroke-width: 1.3;
+  opacity: .6;
   vector-effect: non-scaling-stroke;
 }

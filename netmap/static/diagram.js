@@ -20,20 +20,28 @@ function diagramSymbol(kind) {
   return 'diagram-device';
 }
 
-// Footprint of a device: symbol, name and one row per address. Bounds are relative to the symbol centre.
+// Footprint of a device: symbol, name and one row per address; long address lists wrap into
+// up to three columns. Bounds are relative to the symbol centre.
 function diagramLabelSizes(node, fontScale, measure) {
   const nameWidth = Math.min(diagramLabelLimit,Math.ceil(measure.name(node.name))+8);
-  const nameHeight = 16*fontScale, rowHeight = 13*fontScale;
-  let width = Math.max(diagramIcon.width+12,nameWidth);
-  const rows = node.addresses.map(target=>{
+  const nameHeight = 16*fontScale, rowHeight = 13*fontScale, columnGap = 8;
+  const items = node.addresses.map(target=>{
     const channel = channels[node.address_channels?.[target]]?.short;
     const channelWidth = channel ? 4+Math.ceil(measure.channel(channel)) : 0;
-    const rowWidth = Math.min(diagramLabelLimit,Math.ceil(measure.address(target))+channelWidth+16);
-    width = Math.max(width,rowWidth);
-    return {target,width:rowWidth,channel};
+    return {target,channel,width:Math.min(diagramLabelLimit,Math.ceil(measure.address(target))+channelWidth+16)};
   });
+  const perColumn = Math.ceil(items.length/Math.min(3,Math.ceil(items.length/6))) || 0;
+  const columns = [];
+  items.forEach((item,index)=>{ const column = Math.floor(index/perColumn); columns[column] = Math.max(columns[column]||0,item.width); });
+  const rowsWidth = columns.reduce((sum,width)=>sum+width,0)+columnGap*Math.max(0,columns.length-1);
+  const lefts = columns.map((_,column)=>-rowsWidth/2+columns.slice(0,column).reduce((sum,width)=>sum+width+columnGap,0));
+  const rows = items.map((item,index)=>{
+    const column = Math.floor(index/perColumn);
+    return {...item,x:lefts[column],y:diagramLabelY+nameHeight+(index%perColumn)*rowHeight,width:columns[column]};
+  });
+  const width = Math.max(diagramIcon.width+12,nameWidth,rowsWidth);
   return {nameWidth,nameHeight,rowHeight,rows,
-    bounds:[-width/2,-diagramIcon.height/2-4,width/2,diagramLabelY+nameHeight+rows.length*rowHeight+2]};
+    bounds:[-width/2,-diagramIcon.height/2-4,width/2,diagramLabelY+nameHeight+perColumn*rowHeight+2]};
 }
 
 function diagramMeasure(fontFamily, fontScale) {
@@ -46,8 +54,8 @@ function diagramMeasure(fontFamily, fontScale) {
 }
 
 const diagramByText = (a, b) => a < b ? -1 : a > b ? 1 : 0;
-const diagramMean = values => values.reduce((sum, value) => sum + value, 0) / values.length;
-const diagramGap = {x:22, row:20, bus:16, drop:14, trunk:18, site:96, band:170};
+const diagramGap = {x:22, row:20, bus:16, drop:14, trunk:18};
+const diagramCell = 10;
 const diagramRanks = ['diagram-router','diagram-firewall','diagram-cloud','diagram-switch','diagram-access-point',
   'diagram-server','diagram-storage','diagram-workstation'];
 
@@ -105,8 +113,8 @@ function diagramTree(id, tree, entries) {
   return block;
 }
 
-// A site: trees grown from its main network devices; devices without links fill the last rows.
-function diagramSite(name, entries, links, caption) {
+// A site: trees grown from its gateways and main network devices; devices without links close the rows.
+function diagramSite(name, entries, links, outside, caption) {
   const byId = new Map(entries.map(entry=>[entry.node.id,entry]));
   const adjacent = new Map(entries.map(({node})=>[node.id,[]]));
   for (const edge of links) {
@@ -114,8 +122,9 @@ function diagramSite(name, entries, links, caption) {
     adjacent.get(edge.to_id).push({other:edge.from_id,edge:edge.id});
   }
   const rank = id => diagramRank(byId.get(id).node);
-  const starts = [...byId.keys()].sort((a,b)=>rank(a)-rank(b)||adjacent.get(b).length-adjacent.get(a).length||diagramByText(a,b));
-  const seen = new Set(), tree = new Map(), roots = [], tree_edges = new Set();
+  const starts = [...byId.keys()].sort((a,b)=>rank(a)-rank(b)||(outside.get(b)||0)-(outside.get(a)||0)||
+    adjacent.get(b).length-adjacent.get(a).length||diagramByText(a,b));
+  const seen = new Set(), tree = new Map(), roots = [], treeEdges = new Set();
   for (const start of starts) {
     if (seen.has(start)) continue;
     roots.push(start); seen.add(start);
@@ -124,7 +133,7 @@ function diagramSite(name, entries, links, caption) {
       const next = adjacent.get(id).filter(({other})=>!seen.has(other)).sort((a,b)=>rank(a.other)-rank(b.other)||diagramByText(a.other,b.other));
       for (const {other,edge} of next) {
         if (seen.has(other)) continue;
-        seen.add(other); tree_edges.add(edge); queue.push(other);
+        seen.add(other); treeEdges.add(edge); queue.push(other);
         if (!tree.has(id)) tree.set(id,[]);
         tree.get(id).push({child:other,edge});
       }
@@ -133,20 +142,228 @@ function diagramSite(name, entries, links, caption) {
   const trees = roots.map(id=>diagramTree(id,tree,byId))
     .sort((a,b)=>b.nodes.length-a.nodes.length||diagramRank(a.node)-diagramRank(b.node)||a.node.name.localeCompare(b.node.name,uiLocale,{numeric:true}));
   const rows = diagramRows(trees,diagramRowLimit(trees,diagramGap.x*2,1.8),diagramGap.x*2);
-  const site = {name,count:entries.length,nodes:[],wires:[],treeEdges:tree_edges,captionWidth:caption.width};
+  const site = {name,count:entries.length,nodes:[],wires:[],treeEdges};
   let y = caption.height;
   for (const row of rows) {
     let x = 0;
     for (const block of row.items) { diagramShift(block,x,y,site); x += block.width+diagramGap.x*2; }
     y += row.height+diagramGap.row*2;
   }
-  site.width = Math.max(caption.width,...rows.map(row=>row.width));
+  site.width = Math.max(...rows.map(row=>row.width));
   site.height = y-diagramGap.row*2;
   site.root = {...site.nodes[0]};
+  // The caption keeps clear of the line that rises from the main device to the other sites.
+  const clear = 10, left = site.root.x-clear, right = site.root.x+clear;
+  const captionX = caption.width<=left ? 0 : right;
+  site.width = Math.max(site.width,captionX+caption.width);
+  site.caption = {x:captionX,width:caption.width,height:caption.height};
   return site;
 }
 
-// Sites of one device (usually a VPS) stand in a row on top, larger sites below in reading order.
+// Bottom-left skyline packing of the site blocks into a sheet with the proportions of the screen.
+function diagramPack(blocks, aspect, gap) {
+  const order = [...blocks].sort((a,b)=>b.height-a.height||b.width-a.width||diagramByText(a.name,b.name));
+  const area = order.reduce((sum,block)=>sum+(block.width+gap)*(block.height+gap),0);
+  const limit = Math.max(...order.map(block=>block.width+gap),Math.sqrt(area*aspect));
+  let sky = [{x:0,width:limit,y:0}];
+  for (const block of order) {
+    const need = block.width+gap;
+    let best = null;
+    for (let i=0; i<sky.length && sky[i].x+need<=limit+.01; i++) {
+      let top = 0;
+      for (let j=i; j<sky.length && sky[j].x<sky[i].x+need-.01; j++) top = Math.max(top,sky[j].y);
+      if (!best || top<best.y) best = {x:sky[i].x,y:top};
+    }
+    block.x = best.x+gap/2; block.y = best.y+gap/2;
+    const end = best.x+need, next = [];
+    for (const segment of sky) {
+      const segmentEnd = segment.x+segment.width;
+      if (segmentEnd<=best.x+.01 || segment.x>=end-.01) { next.push(segment); continue; }
+      if (segment.x<best.x) next.push({x:segment.x,width:best.x-segment.x,y:segment.y});
+      if (segmentEnd>end) next.push({x:end,width:segmentEnd-end,y:segment.y});
+    }
+    next.push({x:best.x,width:need,y:best.y+block.height+gap});
+    next.sort((a,b)=>a.x-b.x);
+    sky = next.reduce((merged,segment)=>{
+      const last = merged.at(-1);
+      if (last && Math.abs(last.y-segment.y)<.01) last.width += segment.width; else merged.push({...segment});
+      return merged;
+    },[]);
+  }
+}
+
+// Every site gets a short bar above its main device; each link to another site leaves the bar from its
+// own point and follows the free corridors between sites at right angles, never over a site or another link.
+function diagramSiteLinks(links, siteOf, blocks) {
+  const pairs = new Map(), blockOf = new Map(blocks.map(block=>[block.name,block]));
+  for (const edge of links) {
+    const a = siteOf.get(edge.from_id), b = siteOf.get(edge.to_id);
+    if (a===b) continue;
+    const key = JSON.stringify(a<b?[a,b]:[b,a]);
+    if (!pairs.has(key)) pairs.set(key,[]);
+    pairs.get(key).push(edge);
+  }
+  const cell = diagramCell, list = [...pairs].sort(([a],[b])=>diagramByText(a,b)).map(([key,edges])=>{
+    const [a,b] = JSON.parse(key).map(name=>blockOf.get(name));
+    return {a,b,edges};
+  });
+  if (!list.length) return {siteLinks:[],siteBars:[]};
+  const centre = block => block.x+block.width/2;
+  const ports = new Map();
+  for (const pair of list) for (const [own,other] of [[pair.a,pair.b],[pair.b,pair.a]]) {
+    if (!ports.has(own)) ports.set(own,[]);
+    ports.get(own).push({pair,other});
+  }
+  const bars = [];
+  for (const [block,own] of ports) {
+    own.sort((p,q)=>centre(p.other)-centre(q.other)||diagramByText(p.other.name,q.other.name));
+    // Satellites in the top band connect from below their labels, sites below them from above the main device.
+    const side = block.satellite ? 1 : -1, rootX = block.x+block.root.x;
+    const row = side>0 ? Math.ceil((block.y+block.height+8)/cell) : Math.floor((block.y-8)/cell);
+    // Ports stay over their own site, centred on the main device as far as the site width allows.
+    const first = Math.max(Math.ceil(block.x/cell),Math.min(Math.round(rootX/cell)-Math.floor((own.length-1)/2),
+      Math.floor((block.x+block.width)/cell)-own.length+1));
+    own.forEach((port,index)=>{
+      port.column = first+index; port.row = row; port.side = side;
+      port.pair[port.pair.a===block?'from':'to'] = port;
+    });
+    bars.push({block,row,rootX,hub:side>0?block.y+block.height:block.y+block.root.y-diagramIcon.height/2,
+      columns:[Math.min(own[0].column,Math.floor(rootX/cell)),Math.max(own.at(-1).column,Math.ceil(rootX/cell))]});
+  }
+  const margin = 6+Math.ceil(list.length/2);
+  const minColumn = Math.floor(Math.min(...blocks.map(block=>block.x))/cell)-margin;
+  const minRow = Math.floor(Math.min(...blocks.map(block=>block.y))/cell)-margin;
+  const columns = Math.ceil(Math.max(...blocks.map(block=>block.x+block.width))/cell)-minColumn+margin;
+  const rows = Math.ceil(Math.max(...blocks.map(block=>block.y+block.height))/cell)-minRow+margin;
+  const index = (column,row) => (row-minRow)*columns+(column-minColumn);
+  const blocked = new Uint8Array(columns*rows), used = new Uint8Array(columns*rows);
+  for (const block of blocks) {
+    for (let row=Math.floor((block.y-4)/cell); row<=Math.ceil((block.y+block.height+4)/cell); row++)
+      for (let column=Math.floor((block.x-4)/cell); column<=Math.ceil((block.x+block.width+4)/cell); column++) {
+        const x = column*cell, y = row*cell;
+        if (x>=block.x-4 && x<=block.x+block.width+4 && y>=block.y-4 && y<=block.y+block.height+4) blocked[index(column,row)] = 1;
+      }
+  }
+  for (const bar of bars) for (let column=bar.columns[0]; column<=bar.columns[1]; column++) used[index(column,bar.row)] |= 1;
+  // The first step out of every port is reserved for its own link.
+  const reserve = port => [index(port.column,port.row),index(port.column,port.row+port.side)];
+  for (const pair of list) for (const cellIndex of [...reserve(pair.from),...reserve(pair.to)]) used[cellIndex] |= 2;
+
+  // A* over grid cells with a direction per state: bends cost extra, running along another link is avoided.
+  const moves = [[0,-1],[1,0],[0,1],[-1,0]];
+  function route(from, to, strict) {
+    const own = [...reserve(from),...reserve(to)];
+    for (const cellIndex of own) used[cellIndex] &= ~2;
+    const start = index(from.column,from.row+from.side), goal = index(to.column,to.row+to.side), total = columns*rows*4;
+    // Leave a port away from its site and enter the other port towards its site.
+    const away = from.side<0 ? 0 : 2, towards = to.side<0 ? 2 : 0;
+    const cost = new Float64Array(total).fill(Infinity), previous = new Int32Array(total).fill(-1), heap = [];
+    const push = (state,score) => {
+      heap.push([score,state]);
+      for (let i=heap.length-1; i>0;) { const parent = (i-1)>>1; if (heap[parent][0]<=heap[i][0]) break; [heap[parent],heap[i]] = [heap[i],heap[parent]]; i = parent; }
+    };
+    const pop = () => {
+      const top = heap[0], last = heap.pop();
+      if (heap.length) {
+        heap[0] = last;
+        for (let i=0;;) {
+          const l = i*2+1, r = l+1; let smallest = i;
+          if (l<heap.length && heap[l][0]<heap[smallest][0]) smallest = l;
+          if (r<heap.length && heap[r][0]<heap[smallest][0]) smallest = r;
+          if (smallest===i) break;
+          [heap[smallest],heap[i]] = [heap[i],heap[smallest]]; i = smallest;
+        }
+      }
+      return top;
+    };
+    const goalColumn = goal%columns, goalRow = Math.floor(goal/columns);
+    const guess = cellIndex => Math.abs(cellIndex%columns-goalColumn)+Math.abs(Math.floor(cellIndex/columns)-goalRow);
+    cost[start*4+away] = 0; push(start*4+away,guess(start));
+    let found = -1;
+    while (heap.length) {
+      const [score,state] = pop(), cellIndex = state>>2, direction = state&3;
+      if (score-guess(cellIndex)>cost[state]+1e-9) continue;
+      if (cellIndex===goal && direction!==(towards+2)%4) { found = state; break; }
+      const column = cellIndex%columns, row = Math.floor(cellIndex/columns);
+      for (let turn=0; turn<4; turn++) {
+        if (turn===(direction+2)%4) continue;
+        const nextColumn = column+moves[turn][0], nextRow = row+moves[turn][1];
+        if (nextColumn<0 || nextRow<0 || nextColumn>=columns || nextRow>=rows) continue;
+        const next = nextRow*columns+nextColumn;
+        if (blocked[next]) continue;
+        const axis = turn%2 ? 1 : 2;
+        if (strict && used[next]&axis) continue;
+        const step = 1+(turn!==direction?6:0)+(used[next]&axis?1000:used[next]?3:0)+(next===goal&&turn!==towards?12:0);
+        const nextState = next*4+turn;
+        if (cost[state]+step<cost[nextState]) {
+          cost[nextState] = cost[state]+step; previous[nextState] = state;
+          push(nextState,cost[nextState]+guess(next));
+        }
+      }
+    }
+    for (const cellIndex of own) used[cellIndex] |= 2;
+    if (found<0) return null;
+    const cells = [];
+    for (let state=found; state>=0; state=previous[state]) cells.push(state>>2);
+    cells.reverse();
+    cells.forEach((cellIndex,i)=>{
+      if (!i) return;
+      const before = cells[i-1], axis = Math.abs(cellIndex-before)===1 ? 1 : 2;
+      used[before] |= axis; used[cellIndex] |= axis;
+    });
+    used[start] |= 2; used[goal] |= 2;
+    const points = [[from.column*cell,from.row*cell],...cells.map(cellIndex=>
+      [(cellIndex%columns+minColumn)*cell,(Math.floor(cellIndex/columns)+minRow)*cell]),[to.column*cell,to.row*cell]];
+    return points.filter((point,i)=>i===0||i===points.length-1||
+      !((points[i-1][0]===point[0]&&point[0]===points[i+1][0])||(points[i-1][1]===point[1]&&point[1]===points[i+1][1])));
+  }
+  const distance = pair => Math.abs(pair.from.column-pair.to.column)+Math.abs(pair.from.row-pair.to.row);
+  const siteLinks = [...list].sort((p,q)=>distance(p)-distance(q)||diagramByText(p.a.name+p.b.name,q.a.name+q.b.name)).map(pair=>{
+    // Overlapping another link is allowed only when no free corridor exists at all.
+    const points = route(pair.from,pair.to,true) || route(pair.from,pair.to,false) ||
+      [[pair.from.column*cell,pair.from.row*cell],[pair.to.column*cell,pair.to.row*cell]];
+    const counts = new Map();
+    for (const edge of pair.edges) if (edge.label) counts.set(edge.label,(counts.get(edge.label)||0)+1);
+    const label = [...counts].sort((p,q)=>q[1]-p[1]||diagramByText(p[0],q[0]))[0]?.[0] || '';
+    return {sites:[pair.a.name,pair.b.name],edges:pair.edges.map(edge=>edge.id),points,
+      label:pair.edges.length>1?`${label} ×${pair.edges.length}`.trim():label};
+  });
+  return {siteLinks,siteBars:bars.map(bar=>({site:bar.block.name,
+    points:[[bar.rootX,bar.hub],[bar.rootX,bar.row*cell]],bar:[[bar.columns[0]*cell,bar.row*cell],[bar.columns[1]*cell,bar.row*cell]]}))};
+}
+
+// Sites of one device (usually a VPS) are satellites: they stand in a band above the other sites, each
+// near the sites it links to. The other sites are packed below with the proportions of the screen.
+function diagramArrange(blocks, links, siteOf, aspect, gap) {
+  const satellites = blocks.length>1 ? blocks.filter(block=>block.count===1&&block.name) : [];
+  const sites = blocks.filter(block=>!satellites.includes(block));
+  if (sites.length>1) diagramPack(sites,aspect,gap);
+  else for (const block of sites) { block.x = gap/2; block.y = gap/2; }
+  for (const block of satellites) block.satellite = true;
+  if (!satellites.length) return;
+  const width = sites.length ? Math.max(...sites.map(block=>block.x+block.width))+gap/2 : 0;
+  const rootX = block => block.x+block.root.x, siteBlock = new Map(sites.map(block=>[block.name,block]));
+  const target = new Map(satellites.map(block=>{
+    const xs = links.flatMap(edge=>{
+      const ends = [siteOf.get(edge.from_id),siteOf.get(edge.to_id)];
+      const other = ends[0]===block.name ? ends[1] : ends[1]===block.name ? ends[0] : null;
+      return siteBlock.has(other) ? [rootX(siteBlock.get(other))] : [];
+    });
+    return [block,xs.length ? xs.reduce((sum,x)=>sum+x,0)/xs.length : Infinity];
+  }));
+  satellites.sort((a,b)=>target.get(a)-target.get(b)||diagramByText(a.name,b.name));
+  const rows = diagramRows(satellites,Math.max(width-gap,diagramRowLimit(satellites,gap,aspect*2)),gap);
+  let y = gap/2;
+  for (const row of rows) {
+    let x = Math.max(gap/2,(width-row.width)/2);
+    for (const block of row.items) { block.x = x; block.y = y+row.height-block.height; x += block.width+gap; }
+    y += row.height+gap;
+  }
+  // Links fan into the sites below the band; each needs its own track there.
+  const band = Math.max(gap,(Math.ceil(Math.max(0,...sites.map(block=>block.ports||0))*.6)+4)*diagramCell);
+  for (const block of sites) block.y += y-gap/2+band-gap;
+}
+
 function layoutDiagram(nodes, edges, viewport) {
   const style = getComputedStyle(viewport);
   const fontScale = Number(style.getPropertyValue('--font-scale')) || 1;
@@ -159,86 +376,38 @@ function layoutDiagram(nodes, edges, viewport) {
     siteOf.set(node.id,site);
   }
   const links = edges.filter(edge=>siteOf.has(edge.from_id)&&siteOf.has(edge.to_id)&&edge.from_id!==edge.to_id);
-  const footprint = [...groups.values()].flat().reduce((sum,{labels:{bounds:[l,t,r,b]}})=>sum+(r-l)*(b-t),0);
-  const scale = groups.size>1 ? Math.min(4,Math.max(1,Math.sqrt(footprint*4)/1400)) : 0;
-  const captionHeight = 30*fontScale*scale;
-  const blocks = [...groups].map(([name,entries])=>{
-    const caption = {height:captionHeight,width:scale?measure.caption(name||tr("Без площадки"),scale)+12:0};
-    const block = diagramSite(name,entries,links.filter(edge=>siteOf.get(edge.from_id)===name&&siteOf.get(edge.to_id)===name),caption);
-    block.start = [diagramMean(entries.map(({node})=>node.x)),diagramMean(entries.map(({node})=>node.y))];
-    return block;
-  });
-  const singles = blocks.filter(block=>block.count===1&&block.name), sites = blocks.filter(block=>!singles.includes(block));
-  sites.sort((a,b)=>(a.name==='')-(b.name==='')||Math.round(a.start[1]/400)-Math.round(b.start[1]/400)||a.start[0]-b.start[0]||a.name.localeCompare(b.name,uiLocale,{numeric:true}));
-  const singlesHeight = singles.length ? Math.max(...singles.map(block=>block.height)) : 0;
-  const placed = [];
-  const place = (block,x,y) => { block.x = x; block.y = y; placed.push(block); };
-  let y = singles.length ? singlesHeight+diagramGap.band : 0, width = 0;
-  // One row while it stays reasonably wide, so links from the top row never cross another site.
-  for (const row of diagramRows(sites,diagramRowLimit(sites,diagramGap.site,aspect*4),diagramGap.site)) {
-    let x = 0;
-    for (const block of row.items) { place(block,x,y); x += block.width+diagramGap.site; }
-    width = Math.max(width,row.width);
-    y += row.height+diagramGap.site;
-  }
-  // Each single sits above the sites it links to; unlinked ones close the row.
-  const rootX = block => block.x+block.root.x;
-  const target = new Map(singles.map(block=>{
-    const xs = links.filter(edge=>[edge.from_id,edge.to_id].includes(block.nodes[0].id)).map(edge=>{
-      const other = siteOf.get(edge.from_id===block.nodes[0].id?edge.to_id:edge.from_id);
-      return sites.find(site=>site.name===other);
-    }).filter(Boolean).map(rootX);
-    return [block,xs.length?diagramMean(xs):Infinity];
-  }));
-  singles.sort((a,b)=>target.get(a)-target.get(b)||a.name.localeCompare(b.name,uiLocale,{numeric:true}));
-  const singlesWidth = singles.reduce((sum,block)=>sum+block.width,0)+diagramGap.x*2*Math.max(0,singles.length-1);
-  let x = (width-singlesWidth)/2;
-  for (const block of singles) { place(block,x,singlesHeight-block.height); x += block.width+diagramGap.x*2; }
-
-  const positions = new Map(), routes = new Map(), siteBoxes = [], entryOf = new Map([...groups.values()].flat().map(entry=>[entry.node.id,entry]));
-  for (const block of placed) {
-    for (const node of block.nodes) positions.set(node.id,diagramPosition(entryOf.get(node.id).labels,node.x+block.x,node.y+block.y));
-    for (const wire of block.wires) routes.set(wire.edge,wire.points.map(([px,py])=>[px+block.x,py+block.y]));
-    if (scale) siteBoxes.push({name:block.name,bounds:[block.x,block.y,block.x+block.width,block.y+block.height],
-      caption:{x:block.x,y:block.y,width:block.width,height:captionHeight,scale}});
-  }
-  // Captions follow reading order: the top row first, then left to right.
-  siteBoxes.sort((a,b)=>a.bounds[1]-b.bounds[1]||a.bounds[0]-b.bounds[0]);
-  return {positions,routes,sites:siteBoxes,siteLinks:diagramSiteLinks(links,siteOf,placed,singles,singlesHeight)};
-}
-
-// One line per pair of linked sites, between their main devices, with the number of links.
-function diagramSiteLinks(links, siteOf, placed, singles, singlesHeight) {
-  const pairs = new Map(), blockOf = new Map(placed.map(block=>[block.name,block]));
+  const outside = new Map(), pairs = new Set();
   for (const edge of links) {
     const a = siteOf.get(edge.from_id), b = siteOf.get(edge.to_id);
     if (a===b) continue;
-    const key = JSON.stringify(a<b?[a,b]:[b,a]);
-    if (!pairs.has(key)) pairs.set(key,[]);
-    pairs.get(key).push(edge);
+    pairs.add(a<b?`${a}\n${b}`:`${b}\n${a}`);
+    for (const id of [edge.from_id,edge.to_id]) outside.set(id,(outside.get(id)||0)+1);
   }
-  let lane = 0;
-  return [...pairs].sort(([a],[b])=>diagramByText(a,b)).map(([key,edges])=>{
-    const [a,b] = JSON.parse(key).map(name=>blockOf.get(name)), single = block => singles.includes(block);
-    const top = block => [block.x+block.root.x,block.y+block.root.y-diagramIcon.height/2];
-    const bottom = block => [block.x+block.root.x,block.y+block.height];
-    let points;
-    if (single(a)&&single(b)) {
-      const band = singlesHeight+24+(lane++%6)*7;
-      points = [bottom(a),[bottom(a)[0],band],[bottom(b)[0],band],bottom(b)];
-    } else if (single(a)||single(b)) {
-      const [s,l] = single(a)?[a,b]:[b,a];
-      points = [bottom(s),top(l)];
-    } else {
-      const band = Math.min(a.y,b.y)-24-(lane++%6)*7;
-      points = [top(a),[top(a)[0],band],[top(b)[0],band],top(b)];
-    }
-    const counts = new Map();
-    for (const edge of edges) if (edge.label) counts.set(edge.label,(counts.get(edge.label)||0)+1);
-    const label = [...counts].sort((p,q)=>q[1]-p[1]||diagramByText(p[0],q[0]))[0]?.[0] || '';
-    return {sites:[a.name,b.name],edges:edges.map(edge=>edge.id),points,
-      label:edges.length>1?`${label} ×${edges.length}`.trim():label};
-  });
+  const footprint = [...groups.values()].flat().reduce((sum,{labels:{bounds:[l,t,r,b]}})=>sum+(r-l)*(b-t),0);
+  const scale = groups.size>1 ? Math.min(4,Math.max(1,Math.sqrt(footprint)/700)) : 0;
+  const captionHeight = 30*fontScale*scale;
+  const blocks = [...groups].map(([name,entries])=>diagramSite(name,entries,
+    links.filter(edge=>siteOf.get(edge.from_id)===name&&siteOf.get(edge.to_id)===name),outside,
+    {height:captionHeight,width:scale?measure.caption(name||tr("Без площадки"),scale)+12:0}));
+  // A site is wide enough for a port per link; corridors widen with the number of links between sites.
+  for (const block of blocks) {
+    const ports = [...pairs].filter(pair=>pair.split('\n').includes(block.name)).length;
+    block.width = Math.max(block.width,(ports+1)*diagramCell);
+    block.ports = ports;
+  }
+  const gap = Math.min(160,56+8*Math.ceil(Math.sqrt(pairs.size)));
+  diagramArrange(blocks,links,siteOf,aspect,gap);
+  const positions = new Map(), routes = new Map(), sites = [];
+  const entryOf = new Map([...groups.values()].flat().map(entry=>[entry.node.id,entry]));
+  for (const block of blocks) {
+    for (const node of block.nodes) positions.set(node.id,diagramPosition(entryOf.get(node.id).labels,node.x+block.x,node.y+block.y));
+    for (const wire of block.wires) routes.set(wire.edge,wire.points.map(([px,py])=>[px+block.x,py+block.y]));
+    if (scale) sites.push({name:block.name,bounds:[block.x,block.y,block.x+block.width,block.y+block.height],
+      caption:{x:block.x+block.caption.x,y:block.y,width:block.caption.width,height:captionHeight,scale}});
+  }
+  // Captions follow reading order: top to bottom, then left to right.
+  sites.sort((a,b)=>a.bounds[1]-b.bounds[1]||a.bounds[0]-b.bounds[0]);
+  return {positions,routes,sites,...diagramSiteLinks(links,siteOf,blocks)};
 }
 
 function diagramPosition(labels, x, y) {
@@ -283,9 +452,7 @@ function drawDiagramNode(group, node, layout) {
 }
 
 function drawDiagramAddress(layout, target, index) {
-  const {nameHeight,rowHeight,rows} = layout, {width,channel} = rows[index];
-  const y = diagramLabelY + nameHeight + index*rowHeight;
-  const x = -width/2;
+  const {rowHeight,rows} = layout, {x,y,width,channel} = rows[index];
   const point = elem('g',{class:'address-point diagram-address',transform:`translate(0 ${y})`});
   const hit = elem('rect',{class:'diagram-address-hit',x,y:0,width,height:rowHeight,rx:3});
   const circle = elem('circle',{class:'diagram-address-status',cx:x+5,cy:rowHeight/2,r:2.8,fill:colors.unknown});
@@ -300,6 +467,11 @@ function diagramEdgePoints(edge, from, to, layout, routes) {
   if (routes.has(edge.id)) return routes.get(edge.id);
   const start = layout.get(from.id), end = layout.get(to.id);
   return [[start.x,start.y],[end.x,end.y]];
+}
+
+function drawDiagramSiteBar({points,bar}) {
+  const d = `M${points[0].join(' ')} L${points[1].join(' ')} M${bar[0].join(' ')} L${bar[1].join(' ')}`;
+  return elem('path',{class:'diagram-site-bar',d});
 }
 
 function drawDiagramSiteLink({sites,edges,points,label}) {

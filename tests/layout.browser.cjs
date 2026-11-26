@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const {chromium, firefox, webkit} = require(process.argv[2] || 'playwright');
+const {checkDiagramQuality} = require('./diagram-quality.cjs');
 const staticRoot = path.resolve(__dirname, '../netmap/static');
 setTimeout(()=>{console.error('Browser layout checks exceeded 90 seconds');process.exit(1);},90000).unref();
 const fixture = () => ({revision:1,name:'Layout test',source:'',import_notes:[],
@@ -617,6 +618,9 @@ async function check(browserType, mobile=false) {
     });
     console.log(`  diagram layout of 500 nodes: ${Math.round(layoutTime)} ms`);
     assert.ok(layoutTime<1500,`diagram layout took ${layoutTime} ms`);
+    for (const {name,problems,time,used} of await page.evaluate(checkDiagramQuality)) {
+      assert.deepEqual(problems,[],`diagram rules broken on the "${name}" map (${time} ms, ${used}% filled)`);
+    }
     await page.locator('#view-classic').click();
     assert.deepEqual(await page.locator('.map-node').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('transform'))),
       dense.nodes.map(node=>`translate(${node.x} ${node.y})`));

@@ -220,6 +220,7 @@ function drawGraph() {
   sitePicker.replaceChildren(new Option(tr("Все площадки"),''),...siteNames.map(name=>new Option(name||tr("Без площадки"),`site:${name}`)));
   sitePicker.value=previousSite;
   if(sitePicker.selectedIndex<0)sitePicker.selectedIndex=0;
+  for(const bar of layout.siteBars||[])$('site-layer').append(drawDiagramSiteBar(bar));
   for(const link of layout.siteLinks||[])$('site-layer').append(drawDiagramSiteLink(link));
   for(const site of diagramSites){
     $('site-layer').append(drawDiagramSite(site,()=>focusDiagramSite(site)));
