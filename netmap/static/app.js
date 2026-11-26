@@ -254,10 +254,9 @@ function drawGraph() {
     const group = elem('g',{class:'map-node',transform:mapNodeTransform(node),tabindex:'0',role:'button','data-id':node.id});
     if(editLayout)group.setAttribute('aria-keyshortcuts',Object.keys(nodeMoveDirections).join(' '));
     const position = diagramLayout.get(node.id);
-    const {content,icon,dot,title,stateRing,mark} = diagramView ? drawDiagramNode(group,node,position) : drawClassicNode(group,node);
+    const {content,icon,dot,title} = diagramView ? drawDiagramNode(group,node,position) : drawClassicNode(group,node);
     const endpoints = new Map();
-    const addresses=diagramView?node.addresses.slice(0,1):node.addresses;
-    addresses.forEach((target,index)=>{
+    node.addresses.forEach((target,index)=>{
       const {point,circle} = diagramView ? drawDiagramAddress(position,target,index) : drawClassicAddress(node,index);
       point.setAttribute('tabindex','0'); point.setAttribute('role','button'); point.setAttribute('data-target',target);
       const pointTitle=elem('title',{},target);point.append(pointTitle);
@@ -268,7 +267,7 @@ function drawGraph() {
     });
     group.addEventListener('click',event=>selectNode(node.id,editLayout&&(groupSelect||event.ctrlKey||event.metaKey||event.shiftKey)));
     group.addEventListener('keydown',event=>{if(event.target===group&&(event.key==='Enter'||event.key===' ')){event.preventDefault();selectNode(node.id,editLayout&&(groupSelect||event.ctrlKey||event.metaKey||event.shiftKey));}});
-    $('node-layer').append(group); nodeElements.set(node.id,{group,icon,dot,title,endpoints,stateRing,mark});
+    $('node-layer').append(group); nodeElements.set(node.id,{group,icon,dot,title,endpoints});
   }
   $('map-name').textContent = graph.name;
   $('map-empty').hidden = graph.nodes.length > 0 || (diagramView && graph.edges.length > 0); renderedRevision = graph.revision;
@@ -357,11 +356,9 @@ function updateState() {
   $('summary').replaceChildren(...counters.map(([cls,label,count])=>{const item=html('div',`summary-item ${cls}`);item.append(html('strong','',String(count)),document.createTextNode(label));return item;}));
   for (const node of graph.nodes) {
     const refs = nodeElements.get(node.id); if (!refs) continue;
-    const status = statusFor(node.id); refs.dot.setAttribute('fill',colors[status]);
-    if (diagramView) {
-      refs.stateRing.setAttribute('stroke',colors[status]);
-      refs.mark.textContent=diagramStatusMarks[status];
-    } else refs.icon.style.color = colors[status];
+    const status = statusFor(node.id);
+    if (diagramView) refs.group.style.setProperty('--device',colors[status]);
+    else { refs.dot.setAttribute('fill',colors[status]); refs.icon.style.color = colors[status]; }
     refs.group.classList.toggle('allows-offline',!!node.allow_offline);
     refs.group.setAttribute('aria-label',`${node.name}: ${nodeStatusLabel(node)}`);
     refs.title.textContent = `${node.name}\n${nodeStatusLabel(node)}\n${node.addresses.join('\n')}`;

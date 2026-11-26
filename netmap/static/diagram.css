@@ -16,12 +16,6 @@
   .topbar .map-toolbar button { padding-inline: 5px; }
 }
 .map-panel.diagram {
-  --diagram-front: light-dark(#08719a,#197da2);
-  --diagram-top: light-dark(#189ccb,#3badd5);
-  --diagram-side: light-dark(#084c70,#115577);
-  --diagram-rim: light-dark(#cef4ff,#bcecff);
-  --diagram-ink: light-dark(#156284,#8dd0ed);
-  --diagram-cloud-fill: light-dark(#e2f4fb,#244658);
   background-image: linear-gradient(light-dark(#e5ecf2,#273640) 1px,transparent 1px),
     linear-gradient(90deg,light-dark(#e5ecf2,#273640) 1px,transparent 1px);
   background-size: 24px 24px;
@@ -69,11 +63,13 @@
   font-size: .88em;
   color: var(--muted);
 }
-.diagram-state-ring {
-  fill: var(--map-surface);
-  stroke-width: 1.8;
-  vector-effect: non-scaling-stroke;
-  pointer-events: none;
+/* The symbol body is painted in the node state; the shape alone tells the device type. */
+.diagram .map-node {
+  --device: var(--quiet);
+  --device-top: light-dark(color-mix(in srgb, var(--device) 72%, #fff), color-mix(in srgb, var(--device) 82%, #fff));
+  --device-front: light-dark(color-mix(in srgb, var(--device) 94%, #000), color-mix(in srgb, var(--device) 70%, #000));
+  --device-side: light-dark(color-mix(in srgb, var(--device) 66%, #000), color-mix(in srgb, var(--device) 48%, #000));
+  --device-mark: #fff;
 }
 .diagram-selection {
   fill: none;
@@ -89,26 +85,13 @@
   stroke: light-dark(#b6720d,#f4bb5e);
 }
 .diagram .allows-offline .diagram-selection {
+  stroke: var(--stale);
   stroke-dasharray: 4 3;
 }
-.diagram .allows-offline .diagram-state-ring { stroke-dasharray: 2 2; }
 .diagram .diagram-device-icon {
   stroke: none;
 }
-.diagram .diagram-outline-icon {
-  fill: var(--diagram-cloud-fill);
-  color: var(--diagram-ink);
-}
-.diagram-status {
-  stroke: var(--surface);
-  stroke-width: 1.5;
-}
-.diagram-status-mark {
-  fill: light-dark(#092124,#101e2a);
-  font-size: 12px;
-  font-weight: 800;
-}
-.diagram-text, .diagram-status, .diagram-status-mark, .diagram-address-status {
+.diagram-text, .diagram-address-status {
   pointer-events: none;
 }
 .diagram-ellipsis, .diagram-target {
@@ -124,11 +107,6 @@
   justify-content: center;
   font-size: calc(12px * var(--font-scale, 1));
   line-height: calc(16px * var(--font-scale, 1));
-}
-.diagram-more {
-  flex: none;
-  font-size: .82em;
-  color: var(--link);
 }
 .diagram-address-hit {
   fill: transparent;

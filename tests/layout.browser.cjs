@@ -161,9 +161,12 @@ async function check(browserType, mobile=false) {
       ['#diagram-server','#diagram-router','#diagram-switch','#diagram-firewall']);
     assert.equal(await page.locator('.diagram .node-box').count(),0);
     assert.equal(await page.locator('.diagram .diagram-symbol-hit').count(),stored.nodes.length);
-    assert.deepEqual(await page.locator('.diagram-status-mark').allTextContents(),['✓','×','!','?']);
-    assert.deepEqual(await page.locator('.diagram-state-ring').evaluateAll(rings=>rings.map(ring=>ring.getAttribute('stroke'))),
+    // The whole device symbol carries the node state, as the icon does on the classic map.
+    assert.deepEqual(await page.locator('.diagram .map-node').evaluateAll(nodes=>nodes.map(node=>node.style.getPropertyValue('--device'))),
       ['var(--up)','var(--down)','var(--partial)','var(--stale)']);
+    const deviceFronts=await page.locator('.diagram .map-node').evaluateAll(nodes=>nodes.map(node=>getComputedStyle(node).getPropertyValue('--device-front')));
+    assert.notEqual(deviceFronts[0],deviceFronts[1]);
+    assert.equal(await page.locator('.diagram-status-mark, .diagram-state-ring, .diagram-more').count(),0);
     assert.equal(await page.locator('#site-layer .diagram-site').count(),2);
     assert.equal(await page.locator('.diagram-site-title[aria-label="Приблизить площадку Site B"]').count(),1);
     const fitWidth=await page.evaluate(()=>view.w);
@@ -176,9 +179,8 @@ async function check(browserType, mobile=false) {
     await page.locator('#diagram-site').selectOption('');
     assert.equal(await page.evaluate(()=>view.w),fitWidth);
     assert.equal(await page.locator('#edge-layer > g:not(.diagram-link-hidden)').count(),0);
-    assert.deepEqual(await page.locator('.diagram-target').allTextContents(),['192.0.2.1']);
-    assert.deepEqual(await page.locator('.diagram-channel').allTextContents(),['LAN']);
-    assert.equal(await page.locator('.diagram-more').textContent(),'+1');
+    assert.deepEqual(await page.locator('.diagram-target').allTextContents(),['192.0.2.1','router.example']);
+    assert.deepEqual(await page.locator('.diagram-channel').allTextContents(),['LAN','WAN']);
     await page.locator('.map-node[data-id="a"] .diagram-symbol-hit').click();
     assert.equal(await page.locator('#edge-layer > g:not(.diagram-link-hidden)').count(),2);
     assert.equal(await page.locator('#address-results .address-row').count(),2);

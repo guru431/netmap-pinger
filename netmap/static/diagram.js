@@ -1,40 +1,40 @@
 'use strict';
 
-const diagramIcon = {width:66,height:52};
-const diagramLabelY = 29;
+const diagramIcon = {width:60,height:47};
+const diagramLabelY = diagramIcon.height/2+3;
 const diagramSpacing = 12;
-const diagramLabelLimit = 176;
-const diagramStatusMarks = {up:'✓',partial:'!',down:'×',error:'!',paused:'Ⅱ',unmonitored:'–',optional:'–',stale:'?',unknown:'?',gap:'?'};
+const diagramLabelLimit = 190;
 
 function diagramSymbol(kind) {
   const type = kind.toLowerCase();
   if (/firewall|pfsense|opnsense|межсетев|фа[йе]рвол/.test(type)) return 'diagram-firewall';
   if (/switch|bridge|^hub$|коммутатор/.test(type)) return 'diagram-switch';
-  if (/router|gateway|маршрутизатор|шлюз/.test(type)) return 'diagram-router';
+  if (/router|gateway|modem|маршрутизатор|шлюз|модем/.test(type)) return 'diagram-router';
   if (/access.?point|wireless ap|^ap$|точка доступа|wi[ -]?fi/.test(type)) return 'diagram-access-point';
   if (/\bnas\b|storage|disk array|хранилище/.test(type)) return 'diagram-storage';
   if (/server|mainframe|hypervisor|^vps$|сервер/.test(type)) return 'diagram-server';
-  if (/print|принтер/.test(type)) return 'icon-printer';
-  if (/camera|камер/.test(type)) return 'icon-camera';
-  if (/phone|pda|телефон/.test(type)) return 'icon-phone';
+  if (/print|принтер/.test(type)) return 'diagram-printer';
+  if (/camera|камер/.test(type)) return 'diagram-camera';
+  if (/phone|pda|телефон/.test(type)) return 'diagram-phone';
   if (/computer|workstation|desktop|laptop|notebook|компьютер|станция/.test(type)) return 'diagram-workstation';
   if (/cloud|internet|network$|^vpn$|облако|интернет|^сеть$/.test(type)) return 'diagram-cloud';
   return 'diagram-device';
 }
 
-function diagramLabelSizes(node, fontScale, measureName) {
-  const more = node.addresses.length>1 ? `+${node.addresses.length-1}` : '';
-  const titleWidth = Math.ceil(measureName(node.name).width)+(more?Math.ceil(measureName(more).width)+12:0);
-  const nameWidth = Math.min(diagramLabelLimit,titleWidth+8);
+// Footprint of a device: symbol, name and one row per address. Bounds are relative to the symbol centre.
+function diagramLabelSizes(node, fontScale, measure) {
+  const nameWidth = Math.min(diagramLabelLimit,Math.ceil(measure.name(node.name))+8);
   const nameHeight = 16*fontScale, rowHeight = 13*fontScale;
-  let width = Math.max(diagramIcon.width+14,nameWidth);
-  const rows = node.addresses.slice(0,1).map(target=>{
+  let width = Math.max(diagramIcon.width+12,nameWidth);
+  const rows = node.addresses.map(target=>{
     const channel = channels[node.address_channels?.[target]]?.short;
-    const rowWidth = Math.min(diagramLabelLimit, Math.ceil((target.length*6.6+(channel?10+channel.length*5.8:0))*fontScale)+15);
+    const channelWidth = channel ? 4+Math.ceil(measure.channel(channel)) : 0;
+    const rowWidth = Math.min(diagramLabelLimit,Math.ceil(measure.address(target))+channelWidth+16);
     width = Math.max(width,rowWidth);
-    return {width:rowWidth,channel};
+    return {target,width:rowWidth,channel};
   });
-  return {nameWidth,nameHeight,rowHeight,rows,more,bounds:[-width/2,-31,width/2,diagramLabelY+nameHeight+rows.length*rowHeight]};
+  return {nameWidth,nameHeight,rowHeight,rows,
+    bounds:[-width/2,-diagramIcon.height/2-4,width/2,diagramLabelY+nameHeight+rows.length*rowHeight+2]};
 }
 
 function closestFreeDiagramCoordinate(position, bounds, placed, axis) {
@@ -60,12 +60,18 @@ function closestFreeDiagramCoordinate(position, bounds, placed, axis) {
   return right-target<=target-left ? right : left;
 }
 
+function diagramMeasure(fontFamily, fontScale) {
+  const text = document.createElement('canvas').getContext('2d');
+  const width = font => value => { text.font = font; return text.measureText(value).width; };
+  return {name:width(`650 ${12*fontScale}px ${fontFamily}`),
+    address:width(`${10.5*fontScale}px ui-monospace, Consolas, monospace`),
+    channel:width(`650 ${8*fontScale}px ${fontFamily}`)};
+}
+
 function layoutDiagram(nodes, viewport, grouped) {
   const style = getComputedStyle(viewport);
   const fontScale = Number(style.getPropertyValue('--font-scale')) || 1;
-  const text = document.createElement('canvas').getContext('2d');
-  text.font = `650 ${12*fontScale}px ${style.fontFamily}`;
-  const entries = nodes.map(node=>({node,labels:diagramLabelSizes(node,fontScale,value=>text.measureText(value))}));
+  const entries = nodes.map(node=>({node,labels:diagramLabelSizes(node,fontScale,diagramMeasure(style.fontFamily,fontScale))}));
   if (grouped) return layoutDiagramSites(entries,fontScale);
 
   const positions = new Map(), placed = [];
@@ -163,22 +169,16 @@ function drawDiagramSite({name,bounds:[x,y,right,bottom],header,count}, onFocus)
 }
 
 function drawDiagramNode(group, node, layout) {
-  const {width,height} = diagramIcon, symbol = diagramSymbol(node.kind);
+  const {width,height} = diagramIcon;
   const hit = elem('rect',{class:'diagram-symbol-hit',x:-width/2,y:-height/2,width,height,fill:'transparent'});
-  const ring = elem('ellipse',{class:'diagram-selection',rx:width/2+6,ry:height/2+4});
-  const stateRing = elem('ellipse',{class:'diagram-state-ring',rx:width/2+2,ry:height/2});
-  const iconClass = symbol.startsWith('icon-') ? 'node-icon diagram-outline-icon' : 'node-icon diagram-device-icon';
-  const icon = elem('use',{class:iconClass,href:`#${symbol}`,x:-width/2,y:-height/2,width,height});
-  const badgeX=width/2-1, badgeY=-height/2+5;
-  const dot = elem('circle',{class:'diagram-status',cx:badgeX,cy:badgeY,r:8});
-  const mark = elem('text',{class:'diagram-status-mark',x:badgeX,y:badgeY,'text-anchor':'middle','dominant-baseline':'central','aria-hidden':'true'});
+  const outline = elem('rect',{class:'diagram-selection',x:-width/2-4,y:-height/2-4,width:width+8,height:height+8,rx:6});
+  const icon = elem('use',{class:'node-icon diagram-device-icon',href:`#${diagramSymbol(node.kind)}`,x:-width/2,y:-height/2,width,height});
   const title = elem('title');
-  const {nameWidth,nameHeight,more} = layout;
+  const {nameWidth,nameHeight} = layout;
   const nameHit = elem('rect',{x:-nameWidth/2,y:diagramLabelY,width:nameWidth,height:nameHeight,fill:'transparent'});
-  const caption=[html('span','diagram-ellipsis',node.name)];
-  if(more)caption.push(html('span','diagram-more',more));
-  group.append(hit,ring,stateRing,icon,dot,mark,nameHit,diagramText(-nameWidth/2,diagramLabelY,nameWidth,nameHeight,'diagram-name',...caption),title);
-  return {content:group,icon,dot,title,stateRing,mark};
+  group.append(hit,outline,icon,nameHit,
+    diagramText(-nameWidth/2,diagramLabelY,nameWidth,nameHeight,'diagram-name',html('span','diagram-ellipsis',node.name)),title);
+  return {content:group,icon,title};
 }
 
 function drawDiagramAddress(layout, target, index) {

@@ -34,56 +34,79 @@
     <symbol id="icon-printer" viewBox="0 0 24 24"><path d="M6 9V2h12v7M6 18H3V9h18v9h-3M6 14h12v8H6zM17 11h1"/></symbol>
     <symbol id="icon-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><ellipse cx="12" cy="12" rx="4" ry="10"/><path d="M2 12h20M4 6h16M4 18h16"/></symbol>
     <symbol id="icon-camera" viewBox="0 0 24 24"><rect x="2" y="6" width="15" height="13" rx="2"/><path d="m17 10 5-3v12l-5-3M7 6V3h5v3"/></symbol>
+    <!-- Network diagram symbols in the usual Cisco style. Fills follow the node state via --device-*. -->
     <symbol id="diagram-router" viewBox="0 0 72 56">
-      <path fill="var(--diagram-side)" d="M5 22h62v13c0 8-14 14-31 14S5 43 5 35Z"/>
-      <ellipse fill="var(--diagram-top)" stroke="var(--diagram-rim)" cx="36" cy="22" rx="31" ry="15"/>
-      <path fill="#fff" d="m32 20-10-4-1 3-5-7 14 1-4 2 9 3Zm8 0 10-4 1 3 5-7-14 1 4 2-9 3Zm-8 4-10 4-1-3-5 7 14-1-4-2 9-3Zm8 0 10 4 1-3 5 7-14-1 4-2-9-3Z"/>
+      <path fill="var(--device-side)" d="M4 20V34A32 13 0 0 0 68 34V20Z"/>
+      <ellipse fill="var(--device-top)" stroke="var(--device-side)" cx="36" cy="20" rx="32" ry="13"/>
+      <path fill="none" stroke="var(--device-mark)" stroke-width="2.6" stroke-linecap="round" d="M41.7 17.7 52.4 13.3M30.3 22.3 19.6 26.7M16.8 12.2 27.5 16.6M55.2 27.8 44.5 23.4"/>
+      <path fill="var(--device-mark)" d="M57 11.4 53.5 16.1 51.3 10.5ZM15 28.6 20.7 29.5 18.5 23.9ZM32.2 18.5 26.4 19.4 28.7 13.8ZM39.9 21.6 43.4 26.2 45.6 20.7Z"/>
     </symbol>
     <symbol id="diagram-switch" viewBox="0 0 72 56">
-      <path fill="var(--diagram-front)" d="M4 23h50v22H4Z"/>
-      <path fill="var(--diagram-side)" d="m54 23 14-13v22L54 45Z"/>
-      <path fill="var(--diagram-top)" stroke="var(--diagram-rim)" d="M4 23 18 10h50L54 23Z"/>
-      <path fill="#fff" d="M24 13h24l-3-2 11 3-12 3 4-2H24Zm23 7H23l3 2-11-3 12-3-4 2h24Z"/>
-      <path fill="none" stroke="var(--diagram-rim)" stroke-width="3" d="M10 35h4m4 0h4m4 0h4m4 0h4m4 0h4"/>
+      <path fill="var(--device-front)" d="M4 24h50v22H4Z"/>
+      <path fill="var(--device-side)" d="M54 24 68 11v22L54 46Z"/>
+      <path fill="var(--device-top)" d="M4 24 18 11h50L54 24Z"/>
+      <path fill="none" stroke="var(--device-mark)" stroke-width="2.4" stroke-linecap="round" d="M21 14.6h31M49 20.6H18"/>
+      <path fill="var(--device-mark)" d="M57.5 14.6 51.5 11.9v5.4ZM12.5 20.6l6-2.7v5.4Z"/>
+      <path fill="var(--device-mark)" opacity=".85" d="M10 34h4v4h-4Zm7 0h4v4h-4Zm7 0h4v4h-4Zm7 0h4v4h-4Zm7 0h4v4h-4Zm7 0h4v4h-4Z"/>
     </symbol>
     <symbol id="diagram-firewall" viewBox="0 0 72 56">
-      <path fill="#a4493e" d="m58 11 6-6v36l-6 7Z"/>
-      <path fill="#ec9c79" d="m9 11 6-6h49l-6 6Z"/>
-      <rect fill="#cc6952" x="9" y="11" width="49" height="37" rx="1"/>
-      <path stroke="#fff0df" stroke-width="1.8" d="M9 23h49M9 36h49M25 11v12m17-12v12M17 23v13m16-13v13m17-13v13M25 36v12m17-12v12"/>
+      <path fill="var(--device-top)" d="M8 16 18 7h44l-10 9Z"/>
+      <path fill="var(--device-side)" d="M52 16 62 7v34l-10 9Z"/>
+      <path fill="var(--device-front)" d="M8 16h44v34H8Z"/>
+      <path fill="none" stroke="var(--device-mark)" stroke-width="1.6" d="M8 24.5h44M8 33h44M8 41.5h44M19 16v8.5m11-8.5v8.5m11-8.5v8.5M13.5 24.5V33m11-8.5V33m11-8.5V33m11-8.5V33M19 33v8.5m11-8.5v8.5m11-8.5v8.5M13.5 41.5V50m11-8.5V50m11-8.5V50m11-8.5V50"/>
     </symbol>
     <symbol id="diagram-access-point" viewBox="0 0 72 56">
-      <path fill="none" stroke="var(--diagram-ink)" stroke-width="3" stroke-linecap="round" d="M16 15a30 30 0 0 1 40 0m-14 9a10 10 0 0 0-12 0m-7-4a20 20 0 0 1 26 0M36 29v7"/>
-      <path fill="var(--diagram-top)" d="m10 38 9-5h34l9 5-5 8H15Z"/>
-      <rect fill="var(--diagram-side)" x="10" y="38" width="52" height="10" rx="4"/>
-      <path stroke="var(--diagram-rim)" stroke-width="2" d="M18 43h4m4 0h4m4 0h4"/>
+      <path fill="none" stroke="var(--device-side)" stroke-width="2.8" stroke-linecap="round" d="M30 24a8.5 8.5 0 0 1 12 0M24.4 18.3a16.5 16.5 0 0 1 23.2 0M18.7 12.6a24.5 24.5 0 0 1 34.6 0"/>
+      <path fill="var(--device-side)" d="M12 34v8A24 8 0 0 0 60 42V34Z"/>
+      <ellipse fill="var(--device-top)" stroke="var(--device-side)" cx="36" cy="34" rx="24" ry="8"/>
+      <circle fill="var(--device-mark)" cx="36" cy="34" r="2.6"/>
     </symbol>
     <symbol id="diagram-server" viewBox="0 0 72 56">
-      <path fill="var(--diagram-top)" d="m17 10 9-8h30l-9 8Z"/>
-      <path fill="var(--diagram-side)" d="M47 10 56 2v44l-9 8Z"/>
-      <rect fill="var(--diagram-front)" stroke="var(--diagram-rim)" x="17" y="10" width="30" height="44" rx="1"/>
-      <path fill="none" stroke="var(--diagram-rim)" stroke-width="1.5" d="M17 23h30M17 37h30M23 15h11v4H23Zm0 14h11m-11 14h11m5-26h3m-3 13h3m-3 14h3"/>
+      <path fill="var(--device-top)" d="M20 12 28 5h24l-8 7Z"/>
+      <path fill="var(--device-side)" d="M44 12 52 5v40l-8 7Z"/>
+      <path fill="var(--device-front)" d="M20 12h24v40H20Z"/>
+      <path fill="none" stroke="var(--device-mark)" stroke-width="2" stroke-linecap="round" d="M24.5 19h15M24.5 25h15M24.5 31h15"/>
+      <circle fill="var(--device-mark)" cx="32" cy="44" r="2"/>
     </symbol>
     <symbol id="diagram-storage" viewBox="0 0 72 56">
-      <path fill="var(--diagram-side)" d="M14 13h44v30c0 5-10 10-22 10s-22-5-22-10Z"/>
-      <ellipse fill="var(--diagram-top)" stroke="var(--diagram-rim)" cx="36" cy="13" rx="22" ry="10"/>
-      <path fill="none" stroke="var(--diagram-rim)" stroke-width="1.5" d="M14 23c0 5 10 10 22 10s22-5 22-10M14 33c0 5 10 10 22 10s22-5 22-10"/>
+      <path fill="var(--device-side)" d="M16 12V44A20 7 0 0 0 56 44V12Z"/>
+      <ellipse fill="var(--device-top)" stroke="var(--device-side)" cx="36" cy="12" rx="20" ry="7"/>
+      <path fill="none" stroke="var(--device-mark)" stroke-width="1.8" d="M16 23a20 7 0 0 0 40 0M16 34a20 7 0 0 0 40 0"/>
     </symbol>
     <symbol id="diagram-cloud" viewBox="0 0 72 56">
-      <path fill="var(--diagram-cloud-fill)" stroke="var(--diagram-ink)" stroke-width="2.4" stroke-linejoin="round" d="M19 43c-16 0-19-18-5-23C14 11 27 7 33 13c7-10 22-8 24 5 14 0 17 21 4 25Z"/>
+      <path fill="var(--device-top)" stroke="var(--device-side)" stroke-width="2.6" stroke-linejoin="round" d="M19 45c-16 0-19-18-5-23C14 13 27 9 33 15c7-10 22-8 24 5 14 0 17 21 4 25Z"/>
     </symbol>
     <symbol id="diagram-workstation" viewBox="0 0 72 56">
-      <path fill="var(--diagram-top)" d="m13 10 7-6h42l-7 6Zm-6 38 9-9h43l6 9Z"/>
-      <path fill="var(--diagram-side)" d="m55 10 7-6v31l-7 6ZM7 48h58v5H7Z"/>
-      <rect fill="var(--diagram-front)" stroke="var(--diagram-rim)" x="13" y="10" width="42" height="31" rx="2"/>
-      <rect fill="var(--diagram-cloud-fill)" x="18" y="15" width="32" height="21" rx="3"/>
-      <path stroke="var(--diagram-rim)" stroke-width="2" d="M20 46h29"/>
+      <path fill="var(--device-top)" d="M12 7 17 3h44l-5 4Z"/>
+      <path fill="var(--device-side)" d="M56 7 61 3v31l-5 4ZM30 38h8v6h-8Z"/>
+      <rect fill="var(--device-front)" x="12" y="7" width="44" height="31" rx="2"/>
+      <rect fill="var(--device-top)" x="16" y="11" width="36" height="23" rx="1.5"/>
+      <path fill="var(--device-front)" d="M20 44h28l4 6H16Z"/>
+    </symbol>
+    <symbol id="diagram-printer" viewBox="0 0 72 56">
+      <path fill="var(--device-mark)" stroke="var(--device-side)" stroke-width="1.5" d="M22 6h28v16H22Z"/>
+      <path fill="var(--device-top)" d="M10 22 16 16h50l-6 6Z"/>
+      <path fill="var(--device-side)" d="M60 22 66 16v22l-6 6Z"/>
+      <path fill="var(--device-front)" d="M10 22h50v22H10Z"/>
+      <path fill="var(--device-mark)" stroke="var(--device-side)" stroke-width="1.5" d="M20 36h30v14H20Z"/>
+    </symbol>
+    <symbol id="diagram-camera" viewBox="0 0 72 56">
+      <path fill="var(--device-side)" d="M46 24 62 15v28l-16-9ZM24 40h8v10h-8Z"/>
+      <rect fill="var(--device-front)" x="8" y="17" width="38" height="24" rx="3"/>
+      <circle fill="var(--device-top)" stroke="var(--device-mark)" stroke-width="2.4" cx="27" cy="29" r="7.5"/>
+    </symbol>
+    <symbol id="diagram-phone" viewBox="0 0 72 56">
+      <path fill="var(--device-front)" d="M10 31h52l-4 19H14Z"/>
+      <rect fill="var(--device-side)" x="10" y="20" width="52" height="10" rx="5"/>
+      <rect fill="var(--device-top)" x="38" y="35" width="16" height="9" rx="1"/>
+      <path fill="var(--device-mark)" d="M19 35h4v3h-4Zm7 0h4v3h-4Zm-7 6h4v3h-4Zm7 0h4v3h-4Z"/>
     </symbol>
     <symbol id="diagram-device" viewBox="0 0 72 56">
-      <path fill="var(--diagram-top)" d="m10 22 9-8h44l-9 8Z"/>
-      <path fill="var(--diagram-side)" d="m54 22 9-8v19l-9 8Z"/>
-      <rect fill="var(--diagram-front)" stroke="var(--diagram-rim)" x="10" y="22" width="44" height="19" rx="2"/>
-      <path stroke="var(--diagram-rim)" stroke-width="2" d="M17 30h3m-3 5h3m6-5h20m-20 5h20"/>
+      <path fill="var(--device-top)" d="M10 24 19 16h44l-9 8Z"/>
+      <path fill="var(--device-side)" d="M54 24 63 16v20l-9 8Z"/>
+      <path fill="var(--device-front)" d="M10 24h44v20H10Z"/>
+      <path fill="none" stroke="var(--device-mark)" stroke-width="2" stroke-linecap="round" d="M27 31h20M27 37h20"/>
+      <path fill="var(--device-mark)" d="M15 31h4v3h-4Zm0 5h4v3h-4Z"/>
     </symbol>
   </svg>
   <header class="topbar">
