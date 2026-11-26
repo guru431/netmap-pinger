@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import subprocess
 from contextlib import closing
@@ -8,18 +9,14 @@ import pytest
 from netmap.deploy import release
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Atomic replacement of directory symlinks requires POSIX semantics")
 def test_failed_release_restores_previous_version_and_preserves_backup(tmp_path, monkeypatch):
     previous = tmp_path / "old"
     candidate = tmp_path / "new"
     previous.mkdir()
     candidate.mkdir()
     current = tmp_path / "current"
-    try:
-        current.symlink_to(previous, target_is_directory=True)
-    except OSError as exc:
-        if getattr(exc, "winerror", None) == 1314:
-            pytest.skip("Creating a symlink requires privileges on this Windows host")
-        raise
+    current.symlink_to(previous, target_is_directory=True)
 
     database = tmp_path / "live.sqlite"
     with closing(sqlite3.connect(database)) as connection, connection:
