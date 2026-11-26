@@ -27,7 +27,7 @@ const touchPointers = new Map();
 let pinch = null, blockMapClick = false;
 const svg = $('map');
 let diagramView = false;
-let diagramLayout = new Map(), diagramSites = [];
+let diagramLayout = new Map(), diagramSites = [], diagramRoutes = new Map();
 const mapViewKey = 'netmap-map-view';
 const editLayoutTitle = $('edit-layout').title;
 
@@ -183,7 +183,7 @@ function edgePoints(edge, overrides = new Map(), from = graph.nodes.find(n=>n.id
   });
 }
 function updateEdgeGeometry(edge, refs, overrides = new Map()) {
-  const pts = diagramView ? diagramEdgePoints(refs.from,refs.to,diagramLayout) : edgePoints(edge,overrides,refs.from,refs.to);
+  const pts = diagramView ? diagramEdgePoints(edge,refs.from,refs.to,diagramLayout,diagramRoutes) : edgePoints(edge,overrides,refs.from,refs.to);
   const path = pts.map((p,i) => `${i?'L':'M'}${p[0]} ${p[1]}`).join(' ');
   refs.points = pts;
   refs.path.setAttribute('d',path); refs.hit.setAttribute('d',path);
@@ -213,13 +213,14 @@ function drawGraph() {
   $('node-layer').replaceChildren(); $('edge-layer').replaceChildren(); $('site-layer').replaceChildren();
   nodeElements.clear(); edgeElements.clear();
   const layout=diagramView ? layoutDiagram(graph.nodes,graph.edges,svg) : {positions:new Map(),sites:[]};
-  diagramLayout=layout.positions; diagramSites=layout.sites;
+  diagramLayout=layout.positions; diagramSites=layout.sites; diagramRoutes=layout.routes||new Map();
   const sitePicker=$('diagram-site'), previousSite=sitePicker.value;
   sitePicker.disabled=!diagramSites.length;
   const siteNames=diagramSites.map(({name})=>name).sort((a,b)=>a.localeCompare(b,uiLocale,{numeric:true}));
   sitePicker.replaceChildren(new Option(tr("Все площадки"),''),...siteNames.map(name=>new Option(name||tr("Без площадки"),`site:${name}`)));
   sitePicker.value=previousSite;
   if(sitePicker.selectedIndex<0)sitePicker.selectedIndex=0;
+  for(const link of layout.siteLinks||[])$('site-layer').append(drawDiagramSiteLink(link));
   for(const site of diagramSites){
     $('site-layer').append(drawDiagramSite(site,()=>focusDiagramSite(site)));
   }
@@ -233,6 +234,7 @@ function drawGraph() {
     const title = elem('title',{},edge.label || `${from?.name || tr("Свободный конец")} ↔ ${to?.name || tr("Свободный конец")}`);
     hit.append(title); hit.addEventListener('click',()=>openEdge(edge.id));
     hit.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();openEdge(edge.id);}});
+    if (diagramView) group.classList.add(diagramRoutes.has(edge.id)?'diagram-wire':(from.site||'')===(to.site||'')?'diagram-link-extra':'diagram-link-remote');
     group.append(path);
     group.append(hit,label); $('edge-layer').append(group);
     const refs = {from,to,group,path,hit,label}; edgeElements.set(edge.id,refs); updateEdgeGeometry(edge,refs);

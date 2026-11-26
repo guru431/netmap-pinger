@@ -182,17 +182,29 @@ async function check(browserType, mobile=false) {
     await page.locator('#diagram-site').selectOption('');
     assert.equal(await page.evaluate(()=>view.w),fitWidth);
     assert.equal(await page.locator('#edit-layout').isDisabled(),true);
-    // Topology links run straight between devices; lines with a free end stay on the classic map.
+    // Inside a site the router heads a tree of right-angled wires; links between sites become one
+    // summary line per pair of sites. Lines with a free end stay on the classic map.
     const centres=Object.fromEntries(await page.locator('.diagram .map-node').evaluateAll(nodes=>nodes.map(node=>
-      [node.dataset.id,/^translate\((\S+) (\S+)\)$/.exec(node.getAttribute('transform')).slice(1).join(' ')])));
-    assert.deepEqual(await page.locator('#edge-layer .edge-path').evaluateAll(paths=>paths.map(path=>path.getAttribute('d'))),
-      [`M${centres.a} L${centres.b}`,`M${centres.b} L${centres.c}`,`M${centres.a} L${centres.d}`]);
+      [node.dataset.id,/^translate\((\S+) (\S+)\)$/.exec(node.getAttribute('transform')).slice(1).map(Number)])));
+    const routes=await page.locator('#edge-layer .edge-path').evaluateAll(paths=>paths.map(path=>
+      path.getAttribute('d').split(/ ?[ML]/).filter(Boolean).map(point=>point.split(' ').map(Number))));
+    assert.deepEqual([routes[0],routes[2]],[[centres.a,centres.b],[centres.a,centres.d]]);
+    const wire=routes[1],[routerX,routerY]=centres.b,[switchX,switchY]=centres.c;
+    assert.deepEqual([wire[0],wire.at(-1)],[[routerX-30,routerY],[switchX,switchY-23.5]]);
+    assert.ok(wire.slice(1).every(([x,y],i)=>x===wire[i][0]||y===wire[i][1]),'wires inside a site are orthogonal');
+    assert.deepEqual(await page.locator('#edge-layer > g').evaluateAll(groups=>groups.map(group=>group.classList.value)),
+      ['diagram-link-remote','diagram-wire','diagram-link-remote']);
+    assert.equal(await page.locator('#edge-layer > g.diagram-link-remote').first().isVisible(),false);
+    assert.deepEqual(await page.locator('.diagram-site-link').evaluateAll(links=>links.map(link=>[link.dataset.edges,link.textContent])),
+      [['internal new','Без площадки ↔ Site B · ×2']]);
     assert.equal(await page.locator('.edge-open, .edge-end').count(),0);
     assert.deepEqual(await page.locator('.diagram-target').allTextContents(),['192.0.2.1','router.example']);
     assert.deepEqual(await page.locator('.diagram-channel').allTextContents(),['LAN','WAN']);
     await page.locator('.map-node[data-id="a"] .diagram-symbol-hit').click();
+    // The real links of the selected device show up over the summary line.
     assert.deepEqual(await page.locator('#edge-layer > g.diagram-link-active .edge-path').evaluateAll(paths=>paths.map(path=>path.getAttribute('d'))),
-      [`M${centres.a} L${centres.b}`,`M${centres.a} L${centres.d}`]);
+      [`M${centres.a.join(' ')} L${centres.b.join(' ')}`,`M${centres.a.join(' ')} L${centres.d.join(' ')}`]);
+    assert.equal(await page.locator('#edge-layer > g.diagram-link-active').first().isVisible(),true);
     assert.equal(await page.locator('#address-results .address-row').count(),2);
     await page.locator('#address-results button[aria-label="История router.example"]').click();
     assert.equal(await page.locator('#history-target').inputValue(),'router.example');

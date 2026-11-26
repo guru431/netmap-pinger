@@ -46,7 +46,8 @@
   color: var(--ink);
 }
 .diagram-site-label {
-  justify-content: center;
+  justify-content: flex-start;
+  text-shadow: 2px 0 var(--map-surface), -2px 0 var(--map-surface), 0 2px var(--map-surface), 0 -2px var(--map-surface);
   font-size: calc(19px * var(--font-scale, 1) * var(--caption-scale, 1));
   font-weight: 750;
   letter-spacing: .02em;
@@ -124,12 +125,31 @@
   letter-spacing: .03em;
   font-weight: 650;
 }
+/* Wires are neutral: on the diagram only the device state carries colour. */
+.map-panel.diagram { --wire: light-dark(#7f92a3,#6f8699); }
 .diagram .edge-path {
-  opacity: .55;
-  stroke-width: 1.6;
+  stroke: var(--wire);
+  opacity: .9;
+  stroke-width: 1.4;
   vector-effect: non-scaling-stroke;
 }
+.diagram .edge-label { display: none; }
+.diagram .diagram-link-extra .edge-path {
+  stroke-dasharray: 4 4;
+  opacity: .45;
+}
+.diagram .diagram-link-remote { display: none; }
+.diagram .diagram-link-active { display: inline; }
 .diagram .diagram-link-active .edge-path {
+  stroke: var(--focus);
   opacity: 1;
-  stroke-width: 3;
+  stroke-width: 2.6;
+}
+.diagram .diagram-link-active .edge-label { display: inline; }
+.diagram-site-link-path {
+  fill: none;
+  stroke: var(--wire);
+  stroke-width: 2.2;
+  opacity: .8;
+  vector-effect: non-scaling-stroke;
 }

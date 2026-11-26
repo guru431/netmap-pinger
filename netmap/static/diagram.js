@@ -2,7 +2,6 @@
 
 const diagramIcon = {width:60,height:47};
 const diagramLabelY = diagramIcon.height/2+3;
-const diagramSpacing = 12;
 const diagramLabelLimit = 190;
 
 function diagramSymbol(kind) {
@@ -48,92 +47,109 @@ function diagramMeasure(fontFamily, fontScale) {
 
 const diagramByText = (a, b) => a < b ? -1 : a > b ? 1 : 0;
 const diagramMean = values => values.reduce((sum, value) => sum + value, 0) / values.length;
+const diagramGap = {x:22, row:20, bus:16, drop:14, trunk:18, site:96, band:170};
+const diagramRanks = ['diagram-router','diagram-firewall','diagram-cloud','diagram-switch','diagram-access-point',
+  'diagram-server','diagram-storage','diagram-workstation'];
 
-// Spring embedder in the spirit of Fruchterman–Reingold. Items carry x, y (start and result),
-// links are [index, index, weight]. No randomness: equal input always gives equal output.
-function relaxDiagram(items, links, k, aspect, iterations) {
-  if (items.length < 2) return;
-  const gx = 2/Math.sqrt(aspect), gy = 2*Math.sqrt(aspect);
-  const cx = diagramMean(items.map(item=>item.x)), cy = diagramMean(items.map(item=>item.y));
-  for (let step=0; step<iterations; step++) {
-    const temperature = k*1.5*(1-step/iterations)+1;
-    const moves = items.map(item=>[-(item.x-cx)*gx,-(item.y-cy)*gy]);
-    for (let i=0; i<items.length; i++) {
-      for (let j=i+1; j<items.length; j++) {
-        let dx = items[i].x-items[j].x, dy = items[i].y-items[j].y;
-        if (Math.abs(dx)+Math.abs(dy) < .01) { dx = Math.cos(i+j); dy = Math.sin(i+j); }
-        const distance2 = dx*dx+dy*dy, force = k*k/distance2;
-        moves[i][0]+=dx*force; moves[i][1]+=dy*force;
-        moves[j][0]-=dx*force; moves[j][1]-=dy*force;
+// Network gear comes first: it roots a site and leads the rows under its parent.
+function diagramRank(node) {
+  const rank = diagramRanks.indexOf(diagramSymbol(node.kind));
+  return rank < 0 ? diagramRanks.length : rank;
+}
+
+function diagramRows(blocks, limit, gap) {
+  const rows = [];
+  for (const block of blocks) {
+    const row = rows.at(-1);
+    if (row && row.width+gap+block.width<=limit) { row.items.push(block); row.width+=gap+block.width; row.height=Math.max(row.height,block.height); }
+    else rows.push({items:[block],width:block.width,height:block.height});
+  }
+  return rows;
+}
+
+function diagramRowLimit(blocks, gap, aspect) {
+  const area = blocks.reduce((sum,block)=>sum+(block.width+gap)*(block.height+gap),0);
+  return Math.max(...blocks.map(block=>block.width),Math.sqrt(area*aspect));
+}
+
+function diagramShift(block, dx, dy, into) {
+  for (const node of block.nodes) into.nodes.push({id:node.id,x:node.x+dx,y:node.y+dy});
+  for (const wire of block.wires) into.wires.push({edge:wire.edge,points:wire.points.map(([x,y])=>[x+dx,y+dy])});
+}
+
+// A device with the devices behind it, drawn the way LAN diagrams usually are: the parent on top,
+// a trunk on the left and one bus per row with a drop to every child. Coordinates start at the block's top left.
+function diagramTree(id, tree, entries) {
+  const {node,labels:{bounds:[l,t,r,b]}} = entries.get(id);
+  const kids = (tree.get(id)||[]).map(({child,edge})=>({...diagramTree(child,tree,entries),edge,node:entries.get(child).node}))
+    .sort((a,c)=>diagramRank(a.node)-diagramRank(c.node)||c.nodes.length-a.nodes.length||a.node.name.localeCompare(c.node.name,uiLocale,{numeric:true}));
+  if (!kids.length) return {width:r-l,height:b-t,nodes:[{id,x:-l,y:-t}],wires:[],root:{x:-l,y:-t},node};
+  const rows = diagramRows(kids,diagramRowLimit(kids,diagramGap.x,1.8),diagramGap.x);
+  const inner = Math.max(...rows.map(row=>row.width)), pad = diagramGap.trunk, trunk = 6;
+  const rootX = r-l>inner ? pad-l : pad+inner/2, rootY = -t;
+  const block = {width:pad+Math.max(inner,r-l),nodes:[{id,x:rootX,y:rootY}],wires:[],root:{x:rootX,y:rootY},node};
+  const exit = [rootX-diagramIcon.width/2,rootY];
+  let y = b-t+diagramGap.bus;
+  for (const row of rows) {
+    const bus = y, top = y+diagramGap.drop;
+    let x = pad;
+    for (const kid of row.items) {
+      diagramShift(kid,x,top,block);
+      const cx = kid.root.x+x, cy = kid.root.y+top-diagramIcon.height/2;
+      block.wires.push({edge:kid.edge,points:[exit,[trunk,exit[1]],[trunk,bus],[cx,bus],[cx,cy]]});
+      x += kid.width+diagramGap.x;
+    }
+    y = top+row.height+diagramGap.row;
+  }
+  block.height = y-diagramGap.row;
+  return block;
+}
+
+// A site: trees grown from its main network devices; devices without links fill the last rows.
+function diagramSite(name, entries, links, caption) {
+  const byId = new Map(entries.map(entry=>[entry.node.id,entry]));
+  const adjacent = new Map(entries.map(({node})=>[node.id,[]]));
+  for (const edge of links) {
+    adjacent.get(edge.from_id).push({other:edge.to_id,edge:edge.id});
+    adjacent.get(edge.to_id).push({other:edge.from_id,edge:edge.id});
+  }
+  const rank = id => diagramRank(byId.get(id).node);
+  const starts = [...byId.keys()].sort((a,b)=>rank(a)-rank(b)||adjacent.get(b).length-adjacent.get(a).length||diagramByText(a,b));
+  const seen = new Set(), tree = new Map(), roots = [], tree_edges = new Set();
+  for (const start of starts) {
+    if (seen.has(start)) continue;
+    roots.push(start); seen.add(start);
+    for (const queue=[start]; queue.length;) {
+      const id = queue.shift();
+      const next = adjacent.get(id).filter(({other})=>!seen.has(other)).sort((a,b)=>rank(a.other)-rank(b.other)||diagramByText(a.other,b.other));
+      for (const {other,edge} of next) {
+        if (seen.has(other)) continue;
+        seen.add(other); tree_edges.add(edge); queue.push(other);
+        if (!tree.has(id)) tree.set(id,[]);
+        tree.get(id).push({child:other,edge});
       }
     }
-    for (const [i,j,weight] of links) {
-      const dx = items[i].x-items[j].x, dy = items[i].y-items[j].y;
-      const distance = Math.hypot(dx,dy) || 1, force = weight*distance/k;
-      moves[i][0]-=dx*force; moves[i][1]-=dy*force;
-      moves[j][0]+=dx*force; moves[j][1]+=dy*force;
-    }
-    items.forEach((item,index)=>{
-      const [mx,my] = moves[index], length = Math.hypot(mx,my);
-      if (!length) return;
-      const scale = Math.min(length,temperature)/length;
-      item.x += mx*scale; item.y += my*scale;
-    });
   }
-}
-
-// Greedy pass that guarantees free space: items nearest to the centre keep their place,
-// the rest take the first free point on an outward spiral stretched to the screen proportions.
-function placeWithoutOverlap(items, gap, aspect) {
-  const cx = diagramMean(items.map(item=>item.x)), cy = diagramMean(items.map(item=>item.y));
-  const order = [...items].sort((a,b)=>Math.hypot(a.x-cx,a.y-cy)-Math.hypot(b.x-cx,b.y-cy)||diagramByText(a.key,b.key));
-  const placed = [], stretch = Math.sqrt(aspect), step = 6;
-  const free = ([l,t,r,b]) => placed.every(([pl,pt,pr,pb])=>r+gap<=pl||pr+gap<=l||b+gap<=pt||pb+gap<=t);
-  for (const item of order) {
-    const [l,t,r,b] = item.bounds;
-    search: for (let radius=0;; radius+=step) {
-      const count = radius ? Math.ceil(2*Math.PI*radius/step) : 1;
-      for (let index=0; index<count; index++) {
-        const angle = index/count*2*Math.PI;
-        const x = item.x+radius*Math.cos(angle)*stretch, y = item.y+radius*Math.sin(angle)/stretch;
-        if (free([l+x,t+y,r+x,b+y])) { item.x=x; item.y=y; break search; }
-      }
-    }
-    placed.push([l+item.x,t+item.y,r+item.x,b+item.y]);
+  const trees = roots.map(id=>diagramTree(id,tree,byId))
+    .sort((a,b)=>b.nodes.length-a.nodes.length||diagramRank(a.node)-diagramRank(b.node)||a.node.name.localeCompare(b.node.name,uiLocale,{numeric:true}));
+  const rows = diagramRows(trees,diagramRowLimit(trees,diagramGap.x*2,1.8),diagramGap.x*2);
+  const site = {name,count:entries.length,nodes:[],wires:[],treeEdges:tree_edges,captionWidth:caption.width};
+  let y = caption.height;
+  for (const row of rows) {
+    let x = 0;
+    for (const block of row.items) { diagramShift(block,x,y,site); x += block.width+diagramGap.x*2; }
+    y += row.height+diagramGap.row*2;
   }
+  site.width = Math.max(caption.width,...rows.map(row=>row.width));
+  site.height = y-diagramGap.row*2;
+  site.root = {...site.nodes[0]};
+  return site;
 }
 
-// Spread starting points so the group keeps the arrangement from the classic map at diagram scale.
-function diagramStart(entries, k) {
-  const xs = entries.map(({node})=>node.x), ys = entries.map(({node})=>node.y);
-  const cx = diagramMean(xs), cy = diagramMean(ys);
-  const spread = Math.max(Math.max(...xs)-Math.min(...xs),Math.max(...ys)-Math.min(...ys));
-  const scale = spread ? Math.min(8,Math.max(.5,k*Math.sqrt(entries.length)/spread)) : 1;
-  const taken = new Map();
-  return entries.map(({node},index)=>{
-    let x = (node.x-cx)*scale, y = (node.y-cy)*scale;
-    const key = `${Math.round(x)}:${Math.round(y)}`, repeat = taken.get(key) || 0;
-    taken.set(key,repeat+1);
-    // Stacked imported icons unfold along a golden-angle spiral, in a stable order.
-    if (repeat) { x += Math.cos(repeat*2.39996)*k*.5*Math.sqrt(repeat); y += Math.sin(repeat*2.39996)*k*.5*Math.sqrt(repeat); }
-    return {key:node.id,x,y,index};
-  });
-}
-
-function layoutDiagramGroup(entries, links, aspect) {
-  const k = diagramMean(entries.map(({labels:{bounds:[l,t,r,b]}})=>Math.hypot(r-l,b-t)))*.6+diagramSpacing;
-  const items = diagramStart(entries,k), index = new Map(entries.map(({node},i)=>[node.id,i]));
-  relaxDiagram(items,links.map(edge=>[index.get(edge.from_id),index.get(edge.to_id),1]),k,aspect,160);
-  items.forEach((item,i)=>{ item.bounds = entries[i].labels.bounds; });
-  placeWithoutOverlap(items,diagramSpacing,aspect);
-  return items;
-}
-
-// Two-level layout: devices inside each site, then the sites as blocks with a caption and no frame.
+// Sites of one device (usually a VPS) stand in a row on top, larger sites below in reading order.
 function layoutDiagram(nodes, edges, viewport) {
   const style = getComputedStyle(viewport);
   const fontScale = Number(style.getPropertyValue('--font-scale')) || 1;
-  // Only the window orientation shapes the layout: open panels must not move devices around.
   const aspect = innerWidth>=innerHeight ? 1.6 : .8;
   const measure = diagramMeasure(style.fontFamily,fontScale), groups = new Map(), siteOf = new Map();
   for (const node of [...nodes].sort((a,b)=>diagramByText(a.id,b.id))) {
@@ -143,47 +159,86 @@ function layoutDiagram(nodes, edges, viewport) {
     siteOf.set(node.id,site);
   }
   const links = edges.filter(edge=>siteOf.has(edge.from_id)&&siteOf.has(edge.to_id)&&edge.from_id!==edge.to_id);
-  const laid = [...groups].sort(([a],[b])=>(a==='')-(b==='')||a.localeCompare(b,uiLocale,{numeric:true})).map(([name,entries])=>{
-    const items = layoutDiagramGroup(entries,links.filter(edge=>siteOf.get(edge.from_id)===name&&siteOf.get(edge.to_id)===name),aspect);
-    return {name,entries,items,
-      left:Math.min(...items.map(item=>item.x+item.bounds[0])),right:Math.max(...items.map(item=>item.x+item.bounds[2])),
-      top:Math.min(...items.map(item=>item.y+item.bounds[1])),bottom:Math.max(...items.map(item=>item.y+item.bounds[3]))};
+  const footprint = [...groups.values()].flat().reduce((sum,{labels:{bounds:[l,t,r,b]}})=>sum+(r-l)*(b-t),0);
+  const scale = groups.size>1 ? Math.min(4,Math.max(1,Math.sqrt(footprint*4)/1400)) : 0;
+  const captionHeight = 30*fontScale*scale;
+  const blocks = [...groups].map(([name,entries])=>{
+    const caption = {height:captionHeight,width:scale?measure.caption(name||tr("Без площадки"),scale)+12:0};
+    const block = diagramSite(name,entries,links.filter(edge=>siteOf.get(edge.from_id)===name&&siteOf.get(edge.to_id)===name),caption);
+    block.start = [diagramMean(entries.map(({node})=>node.x)),diagramMean(entries.map(({node})=>node.y))];
+    return block;
   });
-  // Site captions grow with the whole diagram so they stay legible when it is fitted on screen.
-  const area = laid.reduce((sum,group)=>sum+(group.right-group.left)*(group.bottom-group.top),0);
-  const captionScale = Math.min(4,Math.max(1,Math.sqrt(area*2)/1400));
-  const captionHeight = groups.size>1 ? 30*fontScale*captionScale : 0;
-  const blocks = laid.map(({name,entries,items,left,right,top,bottom})=>{
-    const x = (left+right)/2, captionWidth = captionHeight ? measure.caption(name||tr("Без площадки"),captionScale)+16 : 0;
-    const half = Math.max(right-left,captionWidth)/2, y = (top-captionHeight+bottom)/2;
-    return {name,entries,items,key:name,local:[x,y],bounds:[-half,top-captionHeight-y,half,bottom-y],
-      start:[diagramMean(entries.map(({node})=>node.x)),diagramMean(entries.map(({node})=>node.y))]};
-  });
-  if (blocks.length>1) {
-    const k = diagramMean(blocks.map(({bounds:[l,t,r,b]})=>Math.hypot(r-l,b-t)))*.6;
-    const xs = blocks.map(block=>block.start[0]), ys = blocks.map(block=>block.start[1]);
-    const spread = Math.max(Math.max(...xs)-Math.min(...xs),Math.max(...ys)-Math.min(...ys));
-    const scale = spread ? Math.max(1,k*Math.sqrt(blocks.length)/spread) : 1;
-    blocks.forEach((block,i)=>{ block.x = block.start[0]*scale+Math.cos(i*2.39996); block.y = block.start[1]*scale+Math.sin(i*2.39996); });
-    const index = new Map(blocks.map((block,i)=>[block.name,i])), weights = new Map();
-    for (const edge of links) {
-      const a = index.get(siteOf.get(edge.from_id)), b = index.get(siteOf.get(edge.to_id));
-      if (a===b) continue;
-      const key = a<b ? `${a}:${b}` : `${b}:${a}`;
-      weights.set(key,(weights.get(key)||0)+1);
-    }
-    const blockLinks = [...weights].map(([key,count])=>[...key.split(':').map(Number),Math.min(3,count)]);
-    relaxDiagram(blocks,blockLinks,k,aspect,120);
-    placeWithoutOverlap(blocks,56,aspect);
-  } else if (blocks.length) { blocks[0].x = blocks[0].local[0]; blocks[0].y = blocks[0].local[1]; }
-  const positions = new Map(), sites = [];
-  for (const block of blocks) {
-    const dx = block.x-block.local[0], dy = block.y-block.local[1];
-    block.items.forEach((item,i)=>positions.set(item.key,diagramPosition(block.entries[i].labels,item.x+dx,item.y+dy)));
-    const [l,t,r,b] = block.bounds.map((value,i)=>value+(i%2?block.y:block.x));
-    if (captionHeight) sites.push({name:block.name,bounds:[l,t,r,b],caption:{x:l,y:t,width:r-l,height:captionHeight,scale:captionScale}});
+  const singles = blocks.filter(block=>block.count===1&&block.name), sites = blocks.filter(block=>!singles.includes(block));
+  sites.sort((a,b)=>(a.name==='')-(b.name==='')||Math.round(a.start[1]/400)-Math.round(b.start[1]/400)||a.start[0]-b.start[0]||a.name.localeCompare(b.name,uiLocale,{numeric:true}));
+  const singlesHeight = singles.length ? Math.max(...singles.map(block=>block.height)) : 0;
+  const placed = [];
+  const place = (block,x,y) => { block.x = x; block.y = y; placed.push(block); };
+  let y = singles.length ? singlesHeight+diagramGap.band : 0, width = 0;
+  // One row while it stays reasonably wide, so links from the top row never cross another site.
+  for (const row of diagramRows(sites,diagramRowLimit(sites,diagramGap.site,aspect*4),diagramGap.site)) {
+    let x = 0;
+    for (const block of row.items) { place(block,x,y); x += block.width+diagramGap.site; }
+    width = Math.max(width,row.width);
+    y += row.height+diagramGap.site;
   }
-  return {positions,sites};
+  // Each single sits above the sites it links to; unlinked ones close the row.
+  const rootX = block => block.x+block.root.x;
+  const target = new Map(singles.map(block=>{
+    const xs = links.filter(edge=>[edge.from_id,edge.to_id].includes(block.nodes[0].id)).map(edge=>{
+      const other = siteOf.get(edge.from_id===block.nodes[0].id?edge.to_id:edge.from_id);
+      return sites.find(site=>site.name===other);
+    }).filter(Boolean).map(rootX);
+    return [block,xs.length?diagramMean(xs):Infinity];
+  }));
+  singles.sort((a,b)=>target.get(a)-target.get(b)||a.name.localeCompare(b.name,uiLocale,{numeric:true}));
+  const singlesWidth = singles.reduce((sum,block)=>sum+block.width,0)+diagramGap.x*2*Math.max(0,singles.length-1);
+  let x = (width-singlesWidth)/2;
+  for (const block of singles) { place(block,x,singlesHeight-block.height); x += block.width+diagramGap.x*2; }
+
+  const positions = new Map(), routes = new Map(), siteBoxes = [], entryOf = new Map([...groups.values()].flat().map(entry=>[entry.node.id,entry]));
+  for (const block of placed) {
+    for (const node of block.nodes) positions.set(node.id,diagramPosition(entryOf.get(node.id).labels,node.x+block.x,node.y+block.y));
+    for (const wire of block.wires) routes.set(wire.edge,wire.points.map(([px,py])=>[px+block.x,py+block.y]));
+    if (scale) siteBoxes.push({name:block.name,bounds:[block.x,block.y,block.x+block.width,block.y+block.height],
+      caption:{x:block.x,y:block.y,width:block.width,height:captionHeight,scale}});
+  }
+  // Captions follow reading order: the top row first, then left to right.
+  siteBoxes.sort((a,b)=>a.bounds[1]-b.bounds[1]||a.bounds[0]-b.bounds[0]);
+  return {positions,routes,sites:siteBoxes,siteLinks:diagramSiteLinks(links,siteOf,placed,singles,singlesHeight)};
+}
+
+// One line per pair of linked sites, between their main devices, with the number of links.
+function diagramSiteLinks(links, siteOf, placed, singles, singlesHeight) {
+  const pairs = new Map(), blockOf = new Map(placed.map(block=>[block.name,block]));
+  for (const edge of links) {
+    const a = siteOf.get(edge.from_id), b = siteOf.get(edge.to_id);
+    if (a===b) continue;
+    const key = JSON.stringify(a<b?[a,b]:[b,a]);
+    if (!pairs.has(key)) pairs.set(key,[]);
+    pairs.get(key).push(edge);
+  }
+  let lane = 0;
+  return [...pairs].sort(([a],[b])=>diagramByText(a,b)).map(([key,edges])=>{
+    const [a,b] = JSON.parse(key).map(name=>blockOf.get(name)), single = block => singles.includes(block);
+    const top = block => [block.x+block.root.x,block.y+block.root.y-diagramIcon.height/2];
+    const bottom = block => [block.x+block.root.x,block.y+block.height];
+    let points;
+    if (single(a)&&single(b)) {
+      const band = singlesHeight+24+(lane++%6)*7;
+      points = [bottom(a),[bottom(a)[0],band],[bottom(b)[0],band],bottom(b)];
+    } else if (single(a)||single(b)) {
+      const [s,l] = single(a)?[a,b]:[b,a];
+      points = [bottom(s),top(l)];
+    } else {
+      const band = Math.min(a.y,b.y)-24-(lane++%6)*7;
+      points = [top(a),[top(a)[0],band],[top(b)[0],band],top(b)];
+    }
+    const counts = new Map();
+    for (const edge of edges) if (edge.label) counts.set(edge.label,(counts.get(edge.label)||0)+1);
+    const label = [...counts].sort((p,q)=>q[1]-p[1]||diagramByText(p[0],q[0]))[0]?.[0] || '';
+    return {sites:[a.name,b.name],edges:edges.map(edge=>edge.id),points,
+      label:edges.length>1?`${label} ×${edges.length}`.trim():label};
+  });
 }
 
 function diagramPosition(labels, x, y) {
@@ -240,8 +295,18 @@ function drawDiagramAddress(layout, target, index) {
   return {point,circle};
 }
 
-// A topology link on the diagram is a straight line between the two device symbols.
-function diagramEdgePoints(from, to, layout) {
+// Links inside a site follow the drawn tree; any other link is a straight line between the symbols.
+function diagramEdgePoints(edge, from, to, layout, routes) {
+  if (routes.has(edge.id)) return routes.get(edge.id);
   const start = layout.get(from.id), end = layout.get(to.id);
   return [[start.x,start.y],[end.x,end.y]];
+}
+
+function drawDiagramSiteLink({sites,edges,points,label}) {
+  const group = elem('g',{class:'diagram-site-link'});
+  const d = points.map(([x,y],i)=>`${i?'L':'M'}${x} ${y}`).join(' ');
+  group.append(elem('path',{class:'diagram-site-link-path',d}),
+    elem('title',{},`${sites.map(name=>name||tr("Без площадки")).join(' ↔ ')}${label?' · '+label:''}`));
+  group.dataset.edges = edges.join(' ');
+  return group;
 }
